@@ -1,0 +1,53 @@
+# Bytecode & cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Python virtual environments
+env/
+*/env/
+
+# Python build artifacts
+*.spec
+build/
+dist/
+*.egg-info/
+*.eggs/
+
+# VS Code, PyCharm, JetBrains
+.vscode/
+.idea/
+*.iml
+
+# Node.js dependencies and builds
+node_modules/
+*.log
+frontend/dist/
+inventory_dashboard/frontend/dist/
+
+# React / Vite build
+*.env
+*.env.*
+.DS_Store
+
+# Backups and data dumps
+backups/
+inventory_backend/backups/
+
+# OS-specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Python dotenv
+.env
+
+# Temporary or system files
+*.bak
+*.tmp
+*.swp
+*.swo
+
+# Ignore .gitignore files inside sub-envs or tools
+*/.gitignore
