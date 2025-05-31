@@ -15,7 +15,7 @@ If you're using a different fulfillment platform, you'll need to adjust the `/ap
 
 ## Why I Built This
 
-As part of managing inventory workflows for Majool Inc., I saw the need for a unified system that connected product data across Shopify, warehouse scanners, and order sync platforms. I designed this system to eliminate spreadsheet chaos, reduce inventory mismatches, and make life easier for warehouse and ops teams.
+As part of managing inventory workflows for Majool Inc., I saw the need for a unified system that connected product data across mutliple online selling platforms, warehouse scanners, and order sync platforms. I designed this system to eliminate spreadsheet chaos, reduce inventory mismatches, and make life easier for warehouse and ops teams.
 
 ## 📦 Shipping Assumptions
 
