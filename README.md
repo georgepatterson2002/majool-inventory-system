@@ -138,7 +138,7 @@ API_BASE_URL=http://<your_backend_ip>:8000/scanner
 - The backend can be run as a Windows service using NSSM for persistent background execution.
 - The desktop scanner app can be packaged as a portable `.exe` using PyInstaller — no Python install required.
 
-- ### 2. Dashboard .env file — `inventory_scanner/.env`
+- ### 2. Dashboard .env file — `inventory_dashboard/frontend/.env`
 
 ```env
 VITE_API_HOST=http://<your_backend_ip>:8000
