@@ -44,14 +44,15 @@ def fetch_product_list():
         print("Error fetching products:", e)
         return []
 
-def add_delivery(product_id, quantity, user_id):
+def add_delivery(product_id, quantity, user_id, po_number):
     try:
         r = requests.post(
             f"{API_BASE_URL}/add-delivery",
             json={
                 "product_id": product_id,
                 "quantity": quantity,
-                "user_id": user_id
+                "user_id": user_id,
+                "po_number": po_number
             }
         )
         if r.status_code == 200:
@@ -61,6 +62,7 @@ def add_delivery(product_id, quantity, user_id):
     except Exception as e:
         print("Delivery failed:", e)
         return {"success": False, "detail": str(e)}
+
 
 def fetch_master_skus():
     try:
@@ -93,7 +95,7 @@ def add_product(part_number, product_name, brand, master_sku_id, category_id):
         "category_id": category_id
     }
 
-    print("🚀 Sending to backend:", payload)  # <-- THIS IS KEY
+    print("🚀 Sending to backend:", payload)
 
     try:
         r = requests.post(
@@ -103,8 +105,20 @@ def add_product(part_number, product_name, brand, master_sku_id, category_id):
         if r.status_code == 200:
             return {"success": True}
         else:
-            print("❌ Backend response:", r.status_code, r.text)  # <-- also helpful
+            print("❌ Backend response:", r.status_code, r.text)
             return {"success": False, "detail": r.json().get("detail", "Unknown error")}
     except Exception as e:
         print("❌ Failed to add product:", e)
         return {"success": False, "detail": str(e)}
+
+def fetch_brands():
+    try:
+        response = requests.get(f"{API_BASE_URL}/brands")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print("Failed to fetch brands:", response.status_code, response.text)
+            return []
+    except Exception as e:
+        print("Error fetching brands:", e)
+        return []
