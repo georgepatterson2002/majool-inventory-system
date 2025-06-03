@@ -15,7 +15,7 @@ If you're using a different fulfillment platform, you'll need to adjust the `/ap
 
 ## Why I Built This
 
-As part of managing inventory workflows for Majool Inc., I saw the need for a unified system that connected product data across Shopify, warehouse scanners, and order sync platforms. I designed this system to eliminate spreadsheet chaos, reduce inventory mismatches, and make life easier for warehouse and ops teams.
+As part of managing inventory workflows for Majool Inc., I saw the need for a unified system that connected product data across mutliple online selling platforms, warehouse scanners, and order sync platforms. I designed this system to eliminate spreadsheet chaos, reduce inventory mismatches, and make life easier for warehouse and ops teams.
 
 ## 📦 Shipping Assumptions
 
@@ -119,7 +119,7 @@ This system uses a normalized PostgreSQL schema to track products, inventory uni
 ![AddSKU view](screenshots/AddSKU.PNG)
 
 ## Deployment Notes
-> ⚠️ **Important:** You must create two `.env` files before running the system. These are not included in the repo for security reasons.
+> ⚠️ **Important:** You must create three `.env` files before running the system. These are not included in the repo for security reasons.
 
 ### 1. Backend `.env` file — `inventory_backend/.env`
 
@@ -137,6 +137,12 @@ API_BASE_URL=http://<your_backend_ip>:8000/scanner
 
 - The backend can be run as a Windows service using NSSM for persistent background execution.
 - The desktop scanner app can be packaged as a portable `.exe` using PyInstaller — no Python install required.
+
+- ### 2. Dashboard .env file — `inventory_dashboard/frontend/.env`
+
+```env
+VITE_API_HOST=http://<your_backend_ip>:8000
+```
 
 > ## Running It Locally
 
