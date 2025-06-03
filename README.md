@@ -119,7 +119,7 @@ This system uses a normalized PostgreSQL schema to track products, inventory uni
 ![AddSKU view](screenshots/AddSKU.PNG)
 
 ## Deployment Notes
-> ⚠️ **Important:** You must create two `.env` files before running the system. These are not included in the repo for security reasons.
+> ⚠️ **Important:** You must create three `.env` files before running the system. These are not included in the repo for security reasons.
 
 ### 1. Backend `.env` file — `inventory_backend/.env`
 
@@ -137,6 +137,12 @@ API_BASE_URL=http://<your_backend_ip>:8000/scanner
 
 - The backend can be run as a Windows service using NSSM for persistent background execution.
 - The desktop scanner app can be packaged as a portable `.exe` using PyInstaller — no Python install required.
+
+- ### 2. Dashboard .env file — `inventory_dashboard/frontend/.env`
+
+```env
+VITE_API_HOST=http://<your_backend_ip>:8000
+```
 
 > ## Running It Locally
 
