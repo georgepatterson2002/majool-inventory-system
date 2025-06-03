@@ -15,7 +15,7 @@ class LoginRequest(BaseModel):
 class NewProduct(BaseModel):
     part_number: str
     product_name: str
-    brand: str
+    brand: int
     master_sku_id: str
     category_id: int
 
@@ -53,6 +53,7 @@ def get_noser_units():
             SELECT 
                 iu.unit_id,
                 iu.serial_number,
+                iu.po_number,
                 p.product_name,
                 p.part_number,
                 p.brand,
@@ -79,7 +80,7 @@ def assign_serial(
     new_serial: str = Body(...),
     user_id: int = Body(...)
 ):
-    print(f"User {user_id} assigning serial '{new_serial}' → unit {unit_id}")
+    print(f"User {user_id} assigning serial '{new_serial}' -> unit {unit_id}")
 
     try:
         with engine.begin() as conn:
@@ -138,25 +139,34 @@ def get_product_list():
 def add_delivery(
     product_id: int = Body(...),
     quantity: int = Body(...),
-    user_id: int = Body(...)
+    user_id: int = Body(...),
+    po_number: str = Body(...)
 ):
     if quantity <= 0:
         raise HTTPException(status_code=400, detail="Quantity must be greater than zero.")
+
+    if not po_number or len(po_number) < 3:
+        raise HTTPException(status_code=400, detail="PO number is required.")
+
+    if po_number.startswith("11-") or po_number.count("-") >= 2:
+        raise HTTPException(status_code=400, detail="That looks like an Order ID, not a PO number.")
 
     try:
         with engine.begin() as conn:
             conn.execute(
                 text("""
-                     INSERT INTO inventory_units (product_id, serial_number)
-                     SELECT :product_id, 'NOSER'
-                     FROM generate_series(1, :qty)
-                     """),
-                {"product_id": product_id, "qty": quantity}
+                    INSERT INTO inventory_units (product_id, serial_number, po_number)
+                    SELECT :product_id, 'NOSER', :po_number
+                    FROM generate_series(1, :qty)
+                """),
+                {"product_id": product_id, "qty": quantity, "po_number": po_number}
             )
-            return {"success": True}
+
+        return {"success": True}
     except Exception as e:
         print("ERROR in /add-delivery:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
 
 def submit_product(self):
     from app.api_client import add_product
@@ -194,6 +204,22 @@ def get_categories():
     except Exception as e:
         print("ERROR in /categories:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@router.get("/brands")
+def get_brands():
+    try:
+        query = text("""
+            SELECT brand_id, brand_name
+            FROM brands
+            ORDER BY brand_name
+        """)
+        with engine.connect() as conn:
+            result = conn.execute(query).mappings().all()
+            return result
+    except Exception as e:
+        print("ERROR in /brands:", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
 
 @router.post("/add-product")
 def add_product(data: NewProduct):
