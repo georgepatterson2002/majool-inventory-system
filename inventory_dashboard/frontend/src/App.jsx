@@ -38,7 +38,6 @@ function App() {
         grouped[masterId] = {
           master_sku_id: masterId,
           description: row.description,
-          brand: row.brand,
           products: {}
         };
       }
@@ -157,7 +156,6 @@ function App() {
             <tr>
               <th className="border px-3 py-2">Product</th>
               <th className="border px-3 py-2">Master SKU</th>
-              <th className="border px-3 py-2">Brand</th>
               <th className="border px-3 py-2">Qty</th>
             </tr>
           </thead>
@@ -177,7 +175,6 @@ function App() {
                   <tr onClick={toggle} className="cursor-pointer hover:bg-gray-100 font-semibold">
                     <td className="border px-3 py-2">{group.description}</td>
                     <td className="border px-3 py-2">{group.master_sku_id}</td>
-                    <td className="border px-3 py-2">{group.brand}</td>
                     <td className="border px-3 py-2">{totalQty}</td>
                   </tr>
 
