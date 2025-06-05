@@ -10,3 +10,5 @@ call env\Scripts\activate.bat
 
 REM Launch the PyQt app
 python -m app.main
+
+pause

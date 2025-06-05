@@ -56,6 +56,7 @@ class MainWindow(QMainWindow):
             self.username_input.show()
             self.password_input.show()
             self.login_button.show()
+            self.username_input.setFocus()
         else:
             self.status_label.setText("Status: Disconnected")
 

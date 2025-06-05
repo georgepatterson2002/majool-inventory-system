@@ -44,17 +44,20 @@ def fetch_product_list():
         print("Error fetching products:", e)
         return []
 
-def add_delivery(product_id, quantity, user_id, po_number):
+def add_delivery(product_id, quantity, user_id, po_number, sn_prefix=None):
     try:
-        r = requests.post(
-            f"{API_BASE_URL}/add-delivery",
-            json={
-                "product_id": product_id,
-                "quantity": quantity,
-                "user_id": user_id,
-                "po_number": po_number
-            }
-        )
+        payload = {
+            "product_id": product_id,
+            "quantity": quantity,
+            "user_id": user_id,
+            "po_number": po_number
+        }
+
+        if sn_prefix:  # Include prefix only if provided
+            payload["sn_prefix"] = sn_prefix
+
+        r = requests.post(f"{API_BASE_URL}/add-delivery", json=payload)
+
         if r.status_code == 200:
             return {"success": True}
         else:
@@ -62,6 +65,7 @@ def add_delivery(product_id, quantity, user_id, po_number):
     except Exception as e:
         print("Delivery failed:", e)
         return {"success": False, "detail": str(e)}
+
 
 
 def fetch_master_skus():
@@ -122,3 +126,33 @@ def fetch_brands():
     except Exception as e:
         print("Error fetching brands:", e)
         return []
+    
+def fetch_manual_reviews():
+    try:
+        response = requests.get(f"{API_BASE_URL}/manual-review", params={"resolved": "false"})
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print("Failed to fetch manual reviews:", response.status_code, response.text)
+            return []
+    except Exception as e:
+        print("Error fetching manual reviews:", e)
+        return []
+
+def resolve_manual_review(order_id, sku, user_id):
+    payload = {
+        "order_id": order_id,
+        "sku": sku,
+        "user_id": user_id
+    }
+
+    try:
+        response = requests.post(f"{API_BASE_URL}/manual-review/resolve", json=payload)
+        if response.status_code == 200:
+            return {"success": True}
+        else:
+            detail = response.json().get("detail", "Unknown error")
+            return {"success": False, "detail": detail}
+    except Exception as e:
+        print("Error resolving manual review:", e)
+        return {"success": False, "detail": str(e)}
