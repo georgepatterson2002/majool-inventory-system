@@ -60,6 +60,7 @@ def get_manual_check_items():
             result = conn.execute(text("""
                 SELECT review_id AS id, order_id, sku, created_at
                 FROM manual_review
+                WHERE resolved = FALSE
                 ORDER BY created_at DESC
                 LIMIT 100
             """))
@@ -69,6 +70,7 @@ def get_manual_check_items():
     except Exception as e:
         print("Manual check failed:", e)
         return JSONResponse(status_code=500, content={"error": str(e)})
+
 
 
 @router.get("/inventory-log")

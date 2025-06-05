@@ -63,22 +63,6 @@ LOG_DIR = r"C:\Logs"
 MAX_LOG_SIZE_MB = 100
 MAX_LOG_SIZE_BYTES = MAX_LOG_SIZE_MB * 1024 * 1024
 
-def delete_large_logs_daily():
-    while True:
-        for filename in os.listdir(LOG_DIR):
-            if filename.endswith(".log"):
-                path = os.path.join(LOG_DIR, filename)
-                try:
-                    size = os.path.getsize(path)
-                    if size > MAX_LOG_SIZE_BYTES:
-                        os.remove(path)
-                        print(f"[log_cleanup] Deleted {filename} ({size / 1024 / 1024:.2f} MB)")
-                except Exception as e:
-                    print(f"[log_cleanup error] Could not delete {filename}: {e}")
-        time.sleep(24 * 60 * 60)  # Wait 24 hours
-
-# Start log cleanup in background
-threading.Thread(target=delete_large_logs_daily, daemon=True).start()
 
 if __name__ == "__main__":
     import uvicorn
