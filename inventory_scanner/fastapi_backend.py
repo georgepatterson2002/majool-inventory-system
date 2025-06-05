@@ -13,7 +13,7 @@ load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set in .env")
+    raise RuntimeError("❌ DATABASE_URL is not set in .env")
 
 engine = create_engine(DATABASE_URL)
 
@@ -67,10 +67,10 @@ def get_noser_units():
             ORDER BY iu.unit_id DESC
         """)
         with engine.connect() as conn:
-            result = conn.execute(query).mappings().all()
+            result = conn.execute(query).mappings().all()  # ✅ fix here
             return result
     except Exception as e:
-        print("ERROR in /noser-units:", str(e))
+        print("❌ ERROR in /noser-units:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.post("/assign-serial")
@@ -106,5 +106,5 @@ def assign_serial(
 
             return {"success": True}
     except Exception as e:
-        print("ERROR in /assign-serial:", str(e))
+        print("❌ ERROR in /assign-serial:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
