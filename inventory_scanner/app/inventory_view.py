@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QPushButton, QLineEdit, QMessageBox, QAbstractItemView, QTabWidget, QComboBox, QTableWidgetItem, QHeaderView
+    QPushButton, QLineEdit, QMessageBox, QAbstractItemView, QTabWidget, QComboBox, QTableWidgetItem, QHeaderView, QDialog
 )
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtMultimedia import QSoundEffect
@@ -8,7 +8,7 @@ from PyQt5.QtCore import Qt, QUrl, QTimer
 import requests
 import os
 from dotenv import load_dotenv
-from app.api_client import fetch_master_skus, fetch_categories, fetch_brands
+from app.api_client import fetch_master_skus, fetch_categories, fetch_brands, fetch_manual_reviews, resolve_manual_review
 import sys
 
 
@@ -19,6 +19,36 @@ def resource_path(relative_path):
     return os.path.join(os.path.abspath("."), relative_path)
 
 load_dotenv()
+
+def show_strict_error_dialog(parent, serial_number, detail):
+        parent.error_sound.play()
+
+        dialog = QDialog(parent)
+        dialog.setWindowTitle("Scan Error")
+        dialog.setModal(True)
+        dialog.setWindowModality(Qt.ApplicationModal)
+
+        layout = QVBoxLayout()
+        label = QLabel(f"Serial '{serial_number}' caused an error:\n\n{detail}")
+        layout.addWidget(label)
+
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(dialog.accept)
+        ok_button.setFocusPolicy(Qt.NoFocus)  # Prevent keyboard from activating this
+        layout.addWidget(ok_button)
+
+        dialog.setLayout(layout)
+
+        # Block Enter, Return, and Escape keys from dismissing the dialog
+        def block_keys(event):
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape):
+                event.accept()  # ← This actively blocks the key press
+                return
+            super(QDialog, dialog).keyPressEvent(event)
+
+        dialog.keyPressEvent = block_keys
+
+        dialog.exec_()
 
 API_BASE_URL = os.getenv("API_BASE_URL")
 
@@ -31,7 +61,7 @@ class InventoryView(QWidget):
         self.resize(900, 800)
 
         # --- Common Toggle Button ---
-        self.toggle_button = QPushButton("Add Delivery")
+        self.toggle_button = QPushButton("More Tools")
         self.toggle_button.clicked.connect(self.toggle_mode)
 
         self.logout_button = QPushButton("Logout")
@@ -48,8 +78,9 @@ class InventoryView(QWidget):
         self.refresh_button.clicked.connect(self.load_data)
 
         self.serial_input = QLineEdit()
-        self.serial_input.setPlaceholderText("Scan or type new serial number")
+        self.serial_input.setPlaceholderText("Scan new serial number")
         self.serial_input.textChanged.connect(self.reset_input_timer)
+        self.table.itemSelectionChanged.connect(self.focus_serial_input)
 
         self.input_timer = QTimer()
         self.input_timer.setSingleShot(True)
@@ -79,11 +110,15 @@ class InventoryView(QWidget):
 
         self.tab_delivery = QWidget()
         self.tab_product = QWidget()
+        self.tab_manual_review = QWidget()
+
+        self.tabs.currentChanged.connect(self.on_tab_changed)
 
         self.tabs.addTab(self.tab_delivery, "Add Delivery")
 
         if is_admin:
             self.tabs.addTab(self.tab_product, "Add SKU")
+            self.tabs.addTab(self.tab_manual_review, "Manual Review")
 
         self.tabs.hide()  # default to hidden
 
@@ -93,6 +128,12 @@ class InventoryView(QWidget):
 
         self.product_layout = QVBoxLayout()
         self.tab_product.setLayout(self.product_layout)
+
+        self.manual_review_layout = QVBoxLayout()
+        self.tab_manual_review.setLayout(self.manual_review_layout)
+
+        # Placeholder message for now
+        self.manual_review_layout.addWidget(QLabel("Manual Review Table Coming Soon..."))
 
         # --- Inputs for Add Product ---
         self.part_number_input = QLineEdit()
@@ -142,6 +183,7 @@ class InventoryView(QWidget):
 
         # Load initial scan table
         self.load_data()
+        self.serial_input.setFocus()
 
     def handle_logout(self):
         from app.ui_main import MainWindow
@@ -159,6 +201,7 @@ class InventoryView(QWidget):
             self.status_label.setText(f"{len(data)} items found")
             self.populate_table(data)
             self.select_first_valid_row()
+            self.focus_serial_input()
         except Exception as e:
             self.status_label.setText(f"Error: {str(e)}")
 
@@ -169,6 +212,9 @@ class InventoryView(QWidget):
                 self.table.selectRow(row)
                 break
 
+    def focus_serial_input(self):
+        self.serial_input.setFocus()
+    
     def reset_input_timer(self):
         self.input_timer.start(150)  # Wait 150ms after typing stops
 
@@ -244,22 +290,18 @@ class InventoryView(QWidget):
 
     def assign_serial(self):
         selected = self.table.currentRow()
-
         if selected < 0:
-            return  # No row selected, skip silently
+            return
 
         unit_id_item = self.table.item(selected, 5)
-
         if not unit_id_item or not unit_id_item.text().isdigit():
-            return  # Invalid row (e.g., group header), skip silently
+            return
 
         unit_id = int(unit_id_item.text())
         new_serial = self.serial_input.text().strip()
 
         if not new_serial:
-            return  # Ignore empty scan
-
-        self.serial_input.clear()  # Clear immediately for next scan
+            return
 
         try:
             response = requests.post(f"{API_BASE_URL}/assign-serial", json={
@@ -269,20 +311,26 @@ class InventoryView(QWidget):
             })
 
             if response.status_code == 200:
+                self.serial_input.clear()
                 self.load_data()
                 self.serial_input.setFocus()
             else:
                 try:
                     detail = response.json().get("detail", "Unknown error")
                 except Exception:
-                    detail = "Internal server error."
+                    detail = "Internal server error"
 
                 self.error_sound.play()
-                QMessageBox.critical(self, "Scan Error", f"Serial not assigned: {detail}")
+                show_strict_error_dialog(self, new_serial, detail)
 
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Request failed: {str(e)}")
+            self.error_sound.play()
+            show_strict_error_dialog(self, new_serial, f"Request failed: {str(e)}")
+
+
+        self.serial_input.clear()  # Only clear after error handling
+
 
     def open_add_delivery_window(self):
         selected = self.product_table.currentRow()
@@ -311,7 +359,8 @@ class InventoryView(QWidget):
         else:
             self.delivery_container.hide()
             self.scan_container.show()
-            self.toggle_button.setText("Add Delivery")
+            self.toggle_button.setText("More Tools")
+            self.serial_input.setFocus()
 
     def load_product_table(self):
         from app.api_client import fetch_product_list, add_delivery
@@ -462,3 +511,75 @@ class InventoryView(QWidget):
         else:
             QMessageBox.critical(self, "Error", f"Failed: {result['detail']}")
 
+    def load_manual_review_table(self):
+
+        # Clear the layout
+        while self.manual_review_layout.count():
+            child = self.manual_review_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+        self.review_table = QTableWidget()
+        self.review_table.setColumnCount(3)
+        self.review_table.setHorizontalHeaderLabels(["Order ID", "SKU", "Created At"])
+        self.review_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.review_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.review_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.review_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+        reviews = fetch_manual_reviews()
+        self.review_table.setRowCount(len(reviews))
+
+        for row_idx, item in enumerate(reviews):
+            self.review_table.setItem(row_idx, 0, QTableWidgetItem(item["order_id"]))
+            self.review_table.setItem(row_idx, 1, QTableWidgetItem(item["sku"]))
+            self.review_table.setItem(row_idx, 2, QTableWidgetItem(item["created_at"]))
+
+        self.manual_review_layout.addWidget(self.review_table)
+
+        # Refresh button
+        refresh_btn = QPushButton("Refresh Manual Review Table")
+        refresh_btn.clicked.connect(self.load_manual_review_table)
+        self.manual_review_layout.addWidget(refresh_btn)
+
+        # Resolve button
+        self.resolve_btn = QPushButton("Resolve Selected Order")
+        self.resolve_btn.setEnabled(False)
+        self.resolve_btn.clicked.connect(self.resolve_selected_review)
+        self.manual_review_layout.addWidget(self.resolve_btn)
+
+        self.review_table.itemSelectionChanged.connect(
+            lambda: self.resolve_btn.setEnabled(self.review_table.currentRow() >= 0)
+        )
+
+    def resolve_selected_review(self):
+
+        row = self.review_table.currentRow()
+        if row < 0:
+            return
+
+        order_id = self.review_table.item(row, 0).text()
+        sku = self.review_table.item(row, 1).text()
+
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Resolution",
+            f"Are you sure you want to resolve order '{order_id}'?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if confirm != QMessageBox.Yes:
+            return
+
+        result = resolve_manual_review(order_id, sku, self.user_id)
+        if result.get("success"):
+            QMessageBox.information(self, "Resolved", f"Order {order_id} has been marked as resolved.")
+            self.load_manual_review_table()
+            
+        else:
+            detail = result.get("detail", "Unknown error")
+            QMessageBox.critical(self, "Error", f"Failed to resolve: {detail}")
+
+    def on_tab_changed(self, index):
+        if self.tabs.tabText(index) == "Manual Review":
+            self.load_manual_review_table()
