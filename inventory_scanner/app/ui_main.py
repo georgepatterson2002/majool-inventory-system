@@ -23,9 +23,15 @@ class MainWindow(QMainWindow):
         self.login_button = QPushButton("Login")
         self.login_button.clicked.connect(self.handle_login)
 
+        self.username_input.returnPressed.connect(self.handle_login)
+        self.password_input.returnPressed.connect(self.handle_login)
+
         self.status_label = QLabel("Status: Disconnected")
         self.connect_button = QPushButton("Connect to Server")
         self.connect_button.clicked.connect(self.check_server)
+        self.connect_button.setAutoDefault(True)
+        self.connect_button.setDefault(True)
+        self.connect_button.setFocus()
 
         layout = QVBoxLayout()
         layout.addWidget(self.status_label)
