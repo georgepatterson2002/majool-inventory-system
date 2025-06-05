@@ -80,17 +80,26 @@ function App() {
     try {
       const res = await fetch(`${import.meta.env.VITE_API_HOST}/dashboard/inventory-log`);
       const data = await res.json();
+
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
       const grouped = {};
       for (const entry of data) {
-        const id = entry.order_id ?? "unknown";
-        if (!grouped[id]) grouped[id] = [];
-        grouped[id].push(entry);
+        const eventTime = new Date(entry.event_time + 'Z');
+        if (eventTime >= sevenDaysAgo) {
+          const id = entry.order_id ?? "unknown";
+          if (!grouped[id]) grouped[id] = [];
+          grouped[id].push(entry);
+        }
       }
+
       setLog(grouped);
     } catch (err) {
       console.error("❌ Failed to load inventory log", err);
     }
   };
+
 
   const fetchManualCheckItems = async () => {
     try {
