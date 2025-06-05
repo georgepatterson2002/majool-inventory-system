@@ -41,7 +41,9 @@ def sync_veeqo_orders_job():
     with engine.begin() as conn:
         for order in orders:
             order_id = order.get("number")
-            shipped_time = order.get("shipped_at")
+            shipped_time_str = order.get("shipped_at")
+            shipped_time = datetime.fromisoformat(shipped_time_str.replace("Z", "+00:00"))
+
 
             notes = order.get("employee_notes", [])
             serials = [n.get("text", "").strip() for n in notes if n.get("text")]
@@ -59,15 +61,18 @@ def sync_veeqo_orders_job():
                         sku = alloc_item.get("sellable", {}).get("sku_code")
                         if sku and (order_id, sku) not in inserted:
                             inserted.add((order_id, sku))
-                            conn.execute(text("""
-                                INSERT INTO manual_review (order_id, sku, created_at)
-                                VALUES (:order_id, :sku, :created_at)
-                                ON CONFLICT DO NOTHING
-                            """), {
-                                "order_id": order_id,
-                                "sku": sku,
-                                "created_at": shipped_time
-                            })
+                            existing = conn.execute(text("""
+                                SELECT resolved FROM manual_review
+                                WHERE order_id = :order_id AND sku = :sku
+                            """), {"order_id": order_id, "sku": sku}).fetchone()
+
+                            if not existing:
+                                conn.execute(text("""
+                                    INSERT INTO manual_review (order_id, sku, created_at)
+                                    VALUES (:order_id, :sku, :created_at)
+                                """), {"order_id": order_id, "sku": sku, "created_at": shipped_time})
+                            elif existing.resolved:
+                                pass
                 continue
 
             serial_pointer = 0
@@ -92,7 +97,7 @@ def sync_veeqo_orders_job():
                             "sku": sku,
                             "serial": serial,
                             "order_id": order_id,
-                            "event_time": shipped_time
+                            "event_time": datetime.now(pytz.timezone("America/Los_Angeles"))
                         })
 
                         if result.fetchone():

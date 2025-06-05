@@ -19,6 +19,11 @@ class NewProduct(BaseModel):
     master_sku_id: str
     category_id: int
 
+class ResolveRequest(BaseModel):
+    order_id: str
+    sku: str
+    user_id: int
+
 @router.get("/ping")
 def scanner_ping():
     return {"scanner": "pong"}
@@ -54,6 +59,7 @@ def get_noser_units():
                 iu.unit_id,
                 iu.serial_number,
                 iu.po_number,
+                iu.sn_prefix,
                 p.product_name,
                 p.part_number,
                 p.brand,
@@ -84,6 +90,7 @@ def assign_serial(
 
     try:
         with engine.begin() as conn:
+            # Step 1: Check if serial already exists
             existing = conn.execute(
                 text("SELECT 1 FROM inventory_units WHERE serial_number = :sn"),
                 {"sn": new_serial}
@@ -91,24 +98,46 @@ def assign_serial(
             if existing:
                 raise HTTPException(status_code=400, detail="Serial number already exists.")
 
+            # Step 2: Get required SN prefix for this unit
             result = conn.execute(
-                text("""
-                     UPDATE inventory_units
-                     SET serial_number       = :sn,
-                         assigned_by_user_id = :uid,
-                         serial_assigned_at  = NOW()
-                     WHERE unit_id = :unit_id
-                     """),
-                {"sn": new_serial, "uid": user_id, "unit_id": unit_id}
-            )
+                text("SELECT sn_prefix FROM inventory_units WHERE unit_id = :unit_id"),
+                {"unit_id": unit_id}
+            ).fetchone()
 
-            if result.rowcount == 0:
+            if result is None:
                 raise HTTPException(status_code=404, detail="Unit not found.")
 
+            sn_prefix = result.sn_prefix
+
+            # Step 3: Validate prefix match if required
+            if sn_prefix and not new_serial.upper().startswith(sn_prefix.upper()):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Serial must start with '{sn_prefix}'"
+                )
+
+            # Step 4: Assign the serial
+            conn.execute(
+                text("""
+                    UPDATE inventory_units
+                    SET serial_number       = :sn,
+                        assigned_by_user_id = :user_id,
+                        serial_assigned_at  = NOW()
+                    WHERE unit_id = :unit_id
+                """),
+                {"sn": new_serial, "user_id": user_id, "unit_id": unit_id}
+            )
+
+
             return {"success": True}
+
+    except HTTPException:
+        raise  # re-raise known HTTP errors
+
     except Exception as e:
         print("ERROR in /assign-serial:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
 
 
 @router.get("/products")
@@ -140,7 +169,8 @@ def add_delivery(
     product_id: int = Body(...),
     quantity: int = Body(...),
     user_id: int = Body(...),
-    po_number: str = Body(...)
+    po_number: str = Body(...),
+    sn_prefix: str = Body(default=None)
 ):
     if quantity <= 0:
         raise HTTPException(status_code=400, detail="Quantity must be greater than zero.")
@@ -151,18 +181,22 @@ def add_delivery(
     if po_number.startswith("11-") or po_number.count("-") >= 2:
         raise HTTPException(status_code=400, detail="That looks like an Order ID, not a PO number.")
 
+    if sn_prefix and (len(sn_prefix) != 2 or not re.match(r"^[A-Z0-9]{2}$", sn_prefix, re.IGNORECASE)):
+        raise HTTPException(status_code=400, detail="SN prefix must be 2 alphanumeric characters.")
+
     try:
         with engine.begin() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO inventory_units (product_id, serial_number, po_number)
-                    SELECT :product_id, 'NOSER', :po_number
+                    INSERT INTO inventory_units (product_id, serial_number, po_number, sn_prefix)
+                    SELECT :product_id, 'NOSER', :po_number, :sn_prefix
                     FROM generate_series(1, :qty)
                 """),
-                {"product_id": product_id, "qty": quantity, "po_number": po_number}
+                {"product_id": product_id, "qty": quantity, "po_number": po_number, "sn_prefix": sn_prefix}
             )
 
         return {"success": True}
+
     except Exception as e:
         print("ERROR in /add-delivery:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
@@ -270,3 +304,41 @@ def get_master_skus():
         except Exception as e:
             print("ERROR in /master-skus:", str(e))
             raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@router.get("/manual-review")
+def get_manual_review(resolved: bool = False):
+    try:
+        query = text("""
+            SELECT review_id, order_id, sku, created_at
+            FROM manual_review
+            WHERE resolved = :resolved
+            ORDER BY created_at DESC
+        """)
+        with engine.connect() as conn:
+            result = conn.execute(query, {"resolved": resolved}).mappings().all()
+            return result
+    except Exception as e:
+        print("ERROR in /manual-review:",str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@router.post("/manual-review/resolve")
+def resolve_manual_review(req: ResolveRequest):
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("""
+                    UPDATE manual_review
+                    SET resolved = TRUE,
+                    resolved_by_user_id = :uid
+                    WHERE order_id = :oid AND sku = :sku AND resolved = FALSE
+                """),
+                {"uid": req.user_id, "oid": req.order_id, "sku": req.sku}
+            )
+
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Review not found or already resolved")
+
+        return {"success": True}
+    except Exception as e:
+        print("ERROR in /manual-review/resolve:", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
