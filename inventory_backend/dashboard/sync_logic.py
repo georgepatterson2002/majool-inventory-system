@@ -97,7 +97,7 @@ def sync_veeqo_orders_job():
                             "sku": sku,
                             "serial": serial,
                             "order_id": order_id,
-                            "event_time": datetime.now(pytz.timezone("America/Los_Angeles"))
+                            "event_time": shipped_time
                         })
 
                         if result.fetchone():
