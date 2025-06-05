@@ -243,7 +243,7 @@ function App() {
                   <td className="border px-3 py-2">{entries.length}</td>
                   <td className="border px-3 py-2 text-sm text-gray-600">
                     {new Date(
-                      Math.max(...entries.map((e) => new Date(e.event_time + 'Z').getTime()))
+                      Math.max(...entries.map((e) => new Date(e.event_time).getTime()))
                     ).toLocaleString('en-US', { timeZone: 'America/Los_Angeles' })}
                   </td>
                 </tr>
