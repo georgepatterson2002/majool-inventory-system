@@ -86,7 +86,7 @@ function App() {
 
       const grouped = {};
       for (const entry of data) {
-        const eventTime = new Date(entry.event_time + 'Z');
+        const eventTime = new Date(entry.event_time);
         if (eventTime >= sevenDaysAgo) {
           const id = entry.order_id ?? "unknown";
           if (!grouped[id]) grouped[id] = [];
