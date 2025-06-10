@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QPushButton, QLineEdit, QMessageBox, QAbstractItemView, QTabWidget, QComboBox, QTableWidgetItem, QHeaderView, QDialog
+    QPushButton, QLineEdit, QMessageBox, QAbstractItemView, QTabWidget, QComboBox, QTableWidgetItem, QHeaderView, QDialog, QInputDialog
 )
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtMultimedia import QSoundEffect
@@ -542,6 +542,18 @@ class InventoryView(QWidget):
         refresh_btn.clicked.connect(self.load_manual_review_table)
         self.manual_review_layout.addWidget(refresh_btn)
 
+        self.fix_btn = QPushButton("Veeqo Missed-Scan Fix")
+        self.fix_btn.setEnabled(False)
+        self.fix_btn.clicked.connect(self.fix_missed_scan)
+        self.manual_review_layout.addWidget(self.fix_btn)
+
+        self.review_table.itemSelectionChanged.connect(
+            lambda: [
+                self.resolve_btn.setEnabled(self.review_table.currentRow() >= 0),
+                self.fix_btn.setEnabled(self.review_table.currentRow() >= 0)
+            ]
+        )
+
         # Resolve button
         self.resolve_btn = QPushButton("Resolve Selected Order")
         self.resolve_btn.setEnabled(False)
@@ -583,3 +595,46 @@ class InventoryView(QWidget):
     def on_tab_changed(self, index):
         if self.tabs.tabText(index) == "Manual Review":
             self.load_manual_review_table()
+
+    def fix_missed_scan(self):
+        row = self.review_table.currentRow()
+        if row < 0:
+            return
+
+        order_id = self.review_table.item(row, 0).text()
+        sku = self.review_table.item(row, 1).text()
+
+        # Prompt user for serial number
+        serial_number, ok = QInputDialog.getText(self, "Enter Serial Number", "Scan or type the correct serial number:")
+        if not ok or not serial_number.strip():
+            return
+
+        serial_number = serial_number.strip()
+
+        # Step 1: Mark inventory as sold
+        update_response = requests.post(f"{API_BASE_URL}/fix-serial-status", json={
+            "serial_number": serial_number
+        })
+
+        if update_response.status_code != 200:
+            QMessageBox.critical(self, "Error", f"Failed to update inventory: {update_response.text}")
+            return
+
+        # Step 2: Insert into log
+        insert_response = requests.post(f"{API_BASE_URL}/insert-inventory-log", json={
+            "serial_number": serial_number,
+            "order_id": order_id
+        })
+
+        if insert_response.status_code != 200:
+            QMessageBox.critical(self, "Error", f"Failed to log inventory: {insert_response.text}")
+            return
+
+        # Step 3: Resolve manual review
+        resolve_response = resolve_manual_review(order_id, sku, self.user_id)
+        if resolve_response.get("success"):
+            QMessageBox.information(self, "Fix Complete", f"Serial {serial_number} linked and review resolved.")
+            self.load_manual_review_table()
+        else:
+            detail = resolve_response.get("detail", "Unknown error")
+            QMessageBox.critical(self, "Error", f"Failed to resolve: {detail}")
