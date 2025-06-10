@@ -62,7 +62,7 @@ def get_manual_check_items():
                 FROM manual_review
                 WHERE resolved = FALSE
                 ORDER BY created_at DESC
-                LIMIT 100
+                LIMIT 50
             """))
             rows = result.fetchall()
             keys = result.keys()
