@@ -46,7 +46,7 @@ def get_grouped_products():
                 iu.serial_number
             FROM products p
             JOIN master_skus m ON p.master_sku_id = m.master_sku_id
-            LEFT JOIN inventory_units iu ON p.product_id = iu.product_id
+            LEFT JOIN inventory_units iu ON p.product_id = iu.product_id AND iu.sold = FALSE
         """))
         rows = result.fetchall()
         keys = result.keys()
@@ -85,107 +85,6 @@ def get_inventory_log():
         rows = result.fetchall()
         keys = result.keys()
         return [dict(zip(keys, row)) for row in rows]
-
-@router.post("/sync-veeqo-orders")
-def sync_veeqo_orders():
-    def fetch_veeqo_orders_shipped_today():
-        now_local = datetime.now(pytz.timezone("America/Los_Angeles"))
-        today = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-        yesterday = today - timedelta(days=1)
-
-        url = "https://api.veeqo.com/orders"
-        headers = {
-            "x-api-key": VEEQO_API_KEY,
-            "accept": "application/json"
-        }
-        params = {
-            "status": "shipped",
-            "created_at_min": yesterday.isoformat(),
-            "page_size": 100
-        }
-
-        response = requests.get(url, headers=headers, params=params)
-        if response.status_code != 200:
-            raise Exception(f"Veeqo API Error: {response.status_code} - {response.text}")
-
-        orders = response.json()
-
-        shipped_today = [
-            o for o in orders
-            if o.get("shipped_at") and
-               datetime.fromisoformat(o["shipped_at"].replace("Z", "+00:00")) >= today
-        ]
-
-        return shipped_today
-
-    orders = fetch_veeqo_orders_shipped_today()
-    updated = []
-
-    with engine.begin() as conn:
-        for order in orders:
-            if order.get("status") != "shipped":
-                continue
-
-            shipped_time = order.get("shipped_at")
-            if not shipped_time:
-                continue
-
-            notes = order.get("employee_notes", [])
-            serials = [n.get("text", "").strip() for n in notes if n.get("text")]
-            inserted = set()
-
-            for allocation in order.get("allocations", []):
-                for alloc_item in allocation.get("line_items", []):
-                    sku = alloc_item.get("sellable", {}).get("sku_code")
-                    quantity = alloc_item.get("quantity", 0)
-
-                    if not serials:
-                        if sku and (order["number"], sku) not in inserted:
-                            inserted.add((order["number"], sku))
-                            conn.execute(text("""
-                                INSERT INTO manual_review (order_id, sku, created_at)
-                                VALUES (:order_id, :sku, :created_at)
-                                ON CONFLICT DO NOTHING
-                            """), {
-                                "order_id": order.get("number"),
-                                "sku": sku,
-                                "created_at": shipped_time
-                            })
-                        continue
-
-                    for serial in serials[:quantity]:
-                        result = conn.execute(
-                            text("""
-                                INSERT INTO inventory_log (sku, serial_number, order_id, event_time)
-                                VALUES (:sku, :serial, :order_id, :event_time)
-                                ON CONFLICT (serial_number) DO NOTHING
-                                RETURNING serial_number
-                            """),
-                            {
-                                "sku": sku,
-                                "serial": serial,
-                                "order_id": order.get("number"),
-                                "event_time": shipped_time
-                            }
-                        )
-
-                        if result.fetchone():
-                            updated.append({
-                                "serial": serial,
-                                "order_id": order.get("number")
-                            })
-
-                            conn.execute(
-                                text("DELETE FROM inventory_units WHERE serial_number = :serial"),
-                                {"serial": serial}
-                            )
-
-    print("Veeqo Sync Complete")
-    return {
-        "status": "synced",
-        "serials_updated": updated,
-        "count": len(updated)
-    }
 
 @router.post("/sync-veeqo-orders")
 def sync_veeqo_orders():

@@ -24,6 +24,13 @@ class ResolveRequest(BaseModel):
     sku: str
     user_id: int
 
+class FixSerialStatusRequest(BaseModel):
+    serial_number: str
+
+class LogSaleRequest(BaseModel):
+    serial_number: str
+    order_id: str    
+
 @router.get("/ping")
 def scanner_ping():
     return {"scanner": "pong"}
@@ -341,4 +348,47 @@ def resolve_manual_review(req: ResolveRequest):
         return {"success": True}
     except Exception as e:
         print("ERROR in /manual-review/resolve:", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+    
+@router.post("/fix-serial-status")
+def fix_serial_status(req: FixSerialStatusRequest):
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("UPDATE inventory_units SET sold = TRUE WHERE serial_number = :sn"),
+                {"sn": req.serial_number}
+            )
+
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Serial number not found")
+
+        return {"success": True}
+
+    except Exception as e:
+        print("ERROR in /fix-serial-status:", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+@router.post("/insert-inventory-log")
+def insert_inventory_log(req: LogSaleRequest):
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("""
+                    INSERT INTO inventory_log (sku, serial_number, order_id)
+                    SELECT p.part_number, iu.serial_number, :order_id
+                    FROM inventory_units iu
+                    JOIN products p ON iu.product_id = p.product_id
+                    WHERE iu.serial_number = :sn
+                """),
+                {"sn": req.serial_number, "order_id": req.order_id}
+            )
+
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Serial number not found or product join failed")
+
+        return {"success": True}
+
+    except Exception as e:
+        print("ERROR in /insert-inventory-log:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")

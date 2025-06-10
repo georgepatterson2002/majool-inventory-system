@@ -17,23 +17,33 @@ def sync_veeqo_orders_job():
             "x-api-key": VEEQO_API_KEY,
             "accept": "application/json"
         }
-        params = {
-            "status": "shipped",
-            "updated_at_min": (today - timedelta(days=7)).isoformat(),
-            "page_size": 100
-        }
 
-        response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
+        all_orders = []
+        page = 1
+        while True:
+            params = {
+                "status": "shipped",
+                "updated_at_min": (today - timedelta(days=7)).isoformat(),
+                "page_size": 100,
+                "page": page
+            }
 
-        raw_orders = response.json()
+            response = requests.get(url, headers=headers, params=params)
+            response.raise_for_status()
 
-        filtered = [
-            o for o in raw_orders
-            if o.get("shipped_at") and
-               datetime.fromisoformat(o["shipped_at"].replace("Z", "+00:00")) >= today
-        ]
-        return filtered
+            raw_orders = response.json()
+            if not raw_orders:
+                break
+
+            filtered = [
+                o for o in raw_orders
+                if o.get("shipped_at") and
+                datetime.fromisoformat(o["shipped_at"].replace("Z", "+00:00")) >= today
+            ]
+            all_orders.extend(filtered)
+            page += 1
+
+        return all_orders
 
     orders = fetch_orders()
     updated = []
@@ -103,8 +113,9 @@ def sync_veeqo_orders_job():
                         if result.fetchone():
                             updated.append({"serial": serial, "order_id": order_id})
                             conn.execute(text("""
-                                DELETE FROM inventory_units
-                                WHERE serial_number = :serial
+                                UPDATE inventory_units
+                                SET sold = TRUE
+                                WHERE serial_number = :serial;
                             """), {"serial": serial})
 
     return updated
