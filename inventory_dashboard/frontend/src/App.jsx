@@ -50,7 +50,11 @@ function App() {
       };
 
       if (row.serial_number) {
-        existing.serials.push(row.serial_number);
+        existing.serials.push({
+          serial_number: row.serial_number,
+          po_number: row.po_number,
+          scanned_at: row.serial_assigned_at
+        });
       }
 
       grouped[masterId].products[row.product_id] = existing;
@@ -194,13 +198,16 @@ function App() {
         SKU: {p.part_number}
       </td>
     </tr>
-    {p.serials.map((serial, idx) => (
-      <tr key={idx} className="text-xs text-gray-500 bg-gray-50">
+    {p.serials.map((s, idx) => (
+      <tr key={idx} className="text-xs text-gray-600 bg-gray-50">
         <td colSpan={4} className="border px-3 py-1 pl-10">
-          Serial: {serial}
+          <div><strong>Serial:</strong> {s.serial_number}</div>
+          <div><strong>PO:</strong> {s.po_number}</div>
+          <div><strong>Scanned:</strong> {new Date(s.scanned_at).toLocaleString()}</div>
         </td>
       </tr>
     ))}
+
   </React.Fragment>
 ))}
                 </React.Fragment>

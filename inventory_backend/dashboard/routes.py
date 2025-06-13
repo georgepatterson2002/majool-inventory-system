@@ -43,7 +43,9 @@ def get_grouped_products():
                 p.product_name,
                 p.part_number,
                 p.brand,
-                iu.serial_number
+                iu.serial_number,
+                iu.po_number,
+                iu.serial_assigned_at
             FROM products p
             JOIN master_skus m ON p.master_sku_id = m.master_sku_id
             LEFT JOIN inventory_units iu ON p.product_id = iu.product_id AND iu.sold = FALSE
