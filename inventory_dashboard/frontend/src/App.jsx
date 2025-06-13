@@ -174,14 +174,15 @@ function App() {
           </thead>
           <tbody>
             {products.map((group) => {
+              const totalQty = group.products.reduce((sum, p) => sum + p.serials.length, 0);
+              if (totalQty === 0) return null;  // SKIP zero-qty rows
+
               const isOpen = expandedSkus.has(group.master_sku_id);
               const toggle = () => {
                 const next = new Set(expandedSkus);
                 isOpen ? next.delete(group.master_sku_id) : next.add(group.master_sku_id);
                 setExpandedSkus(next);
               };
-
-              const totalQty = group.products.reduce((sum, p) => sum + p.serials.length, 0);
 
               return (
                 <React.Fragment key={group.master_sku_id}>
