@@ -173,7 +173,17 @@ function App() {
             </tr>
           </thead>
           <tbody>
-            {products.map((group) => {
+            {products
+              .slice()
+              .sort((a, b) =>
+                (a.master_sku_id.startsWith("MSKU-") ? a.master_sku_id.slice(5) : a.master_sku_id)
+                  .localeCompare(
+                    b.master_sku_id.startsWith("MSKU-") ? b.master_sku_id.slice(5) : b.master_sku_id,
+                    undefined,
+                    { numeric: true, sensitivity: 'base' }
+                  )
+              )
+              .map((group) => {
               const totalQty = group.products.reduce((sum, p) => sum + p.serials.length, 0);
               if (totalQty === 0) return null;  // SKIP zero-qty rows
 
