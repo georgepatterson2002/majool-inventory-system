@@ -167,8 +167,8 @@ function App() {
         <table className="w-full border border-gray-300">
           <thead className="bg-gray-100 text-left">
             <tr>
-              <th className="border px-3 py-2">Product</th>
               <th className="border px-3 py-2">Master SKU</th>
+              <th className="border px-3 py-2">Product</th>
               <th className="border px-3 py-2">Qty</th>
             </tr>
           </thead>
@@ -186,8 +186,10 @@ function App() {
               return (
                 <React.Fragment key={group.master_sku_id}>
                   <tr onClick={toggle} className="cursor-pointer hover:bg-gray-100 font-semibold">
+                    <td className="border px-3 py-2">
+                      {group.master_sku_id.startsWith("MSKU-") ? group.master_sku_id.slice(5) : group.master_sku_id}
+                    </td>
                     <td className="border px-3 py-2">{group.description}</td>
-                    <td className="border px-3 py-2">{group.master_sku_id}</td>
                     <td className="border px-3 py-2">{totalQty}</td>
                   </tr>
 
