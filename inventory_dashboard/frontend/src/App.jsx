@@ -194,24 +194,25 @@ function App() {
                     <td className="border px-3 py-2">{totalQty}</td>
                   </tr>
 
-                  {isOpen && group.products.map((p) => (
-  <React.Fragment key={p.product_id}>
-    <tr className="text-sm bg-white">
-      <td colSpan={4} className="border px-3 py-2 pl-6 text-gray-700">
-        SKU: {p.part_number}
-      </td>
-    </tr>
-    {p.serials.map((s, idx) => (
-      <tr key={idx} className="text-xs text-gray-600 bg-gray-50">
-        <td colSpan={4} className="border px-3 py-1 pl-10">
-          <div><strong>Serial:</strong> {s.serial_number}</div>
-          <div><strong>PO:</strong> {s.po_number}</div>
-          <div><strong>Scanned:</strong> {new Date(s.scanned_at).toLocaleString()}</div>
-        </td>
-      </tr>
-    ))}
-
-  </React.Fragment>
+                  {isOpen && group.products
+                    .filter((p) => p.serials.length > 0) // Hide SKUs with 0 serials
+                    .map((p) => (
+                      <React.Fragment key={p.product_id}>
+                        <tr className="text-sm bg-white">
+                          <td colSpan={4} className="border px-3 py-2 pl-6 text-gray-700">
+                            SKU: {p.part_number}
+                          </td>
+                        </tr>
+                        {p.serials.map((s, idx) => (
+                          <tr key={idx} className="text-xs text-gray-600 bg-gray-50">
+                            <td colSpan={4} className="border px-3 py-1 pl-10">
+                              <div><strong>Serial:</strong> {s.serial_number}</div>
+                              <div><strong>PO:</strong> {s.po_number}</div>
+                              <div><strong>Scanned:</strong> {new Date(s.scanned_at).toLocaleString()}</div>
+                            </td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
 ))}
                 </React.Fragment>
               );
