@@ -392,3 +392,86 @@ def insert_inventory_log(req: LogSaleRequest):
     except Exception as e:
         print("ERROR in /insert-inventory-log:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+@router.post("/handle-return-scan")
+def handle_return_scan(
+    scanned_serial: str = Body(...),
+    placeholder_unit_id: int = Body(...),
+    user_id: int = Body(...)
+):
+    try:
+        with engine.begin() as conn:
+            # Step 1: Find the existing unit by serial
+            original = conn.execute(text("""
+                SELECT iu.unit_id, iu.product_id, iu.serial_number, iu.serial_assigned_at,
+                       iu.assigned_by_user_id, iu.po_number, iu.sn_prefix, iu.sold,
+                       m.master_sku_id
+                FROM inventory_units iu
+                JOIN products p ON iu.product_id = p.product_id
+                JOIN master_skus m ON p.master_sku_id = m.master_sku_id
+                WHERE iu.serial_number = :sn
+            """), {"sn": scanned_serial}).fetchone()
+
+            if not original:
+                raise HTTPException(status_code=404, detail="Serial number not found.")
+
+            if not original.sold:
+                raise HTTPException(status_code=400, detail="Serial number is already in stock.")
+
+            # Step 2: Verify master SKU match
+            placeholder = conn.execute(text("""
+                SELECT iu.unit_id, p.product_id, m.master_sku_id
+                FROM inventory_units iu
+                JOIN products p ON iu.product_id = p.product_id
+                JOIN master_skus m ON p.master_sku_id = m.master_sku_id
+                WHERE iu.unit_id = :unit_id AND iu.serial_number = 'NOSER'
+            """), {"unit_id": placeholder_unit_id}).fetchone()
+
+            if not placeholder:
+                raise HTTPException(status_code=400, detail="Placeholder NOSER unit not found.")
+
+            if placeholder.master_sku_id != original.master_sku_id:
+                raise HTTPException(status_code=400, detail="Master SKU mismatch between scanned unit and placeholder.")
+
+            # Step 3: Archive original unit to returns table
+            conn.execute(text("""
+                INSERT INTO returns (
+                    original_unit_id, product_id, serial_number, serial_assigned_at,
+                    assigned_by_user_id, po_number, sn_prefix, sold
+                ) VALUES (
+                    :original_unit_id, :product_id, :serial_number, :serial_assigned_at,
+                    :assigned_by_user_id, :po_number, :sn_prefix, :sold
+                )
+            """), {
+                "original_unit_id": original.unit_id,
+                "product_id": original.product_id,
+                "serial_number": original.serial_number,
+                "serial_assigned_at": original.serial_assigned_at,
+                "assigned_by_user_id": original.assigned_by_user_id,
+                "po_number": original.po_number,
+                "sn_prefix": original.sn_prefix,
+                "sold": original.sold
+            })
+
+            # Step 4: Update original unit as returned
+            conn.execute(text("""
+                UPDATE inventory_units
+                SET sold = FALSE,
+                    serial_assigned_at = NOW(),
+                    po_number = 'RETURN'
+                WHERE unit_id = :unit_id
+            """), {"unit_id": original.unit_id})
+
+            # Step 5: Remove the NOSER placeholder
+            conn.execute(text("""
+                DELETE FROM inventory_units WHERE unit_id = :uid
+            """), {"uid": placeholder.unit_id})
+
+        return {"success": True, "message": "Return processed successfully."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("ERROR in /handle-return-scan:", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
