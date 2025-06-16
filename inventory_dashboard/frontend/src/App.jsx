@@ -216,10 +216,13 @@ function App() {
                         {p.serials.map((s, idx) => (
                           <tr key={idx} className="text-xs text-gray-600 bg-gray-50">
                             <td colSpan={4} className="border px-3 py-1 pl-10">
-                              <div><strong>Serial:</strong> {s.serial_number}</div>
-                              <div><strong>PO:</strong> {s.po_number}</div>
-                              <div><strong>Scanned:</strong> {new Date(s.scanned_at).toLocaleString()}</div>
+                              <div className="flex flex-wrap gap-4">
+                                <span><strong>Serial:</strong> {s.serial_number}</span>
+                                <span><strong>PO:</strong> {s.po_number}</span>
+                                <span><strong>Scanned:</strong> {new Date(s.scanned_at).toLocaleString()}</span>
+                              </div>
                             </td>
+
                           </tr>
                         ))}
                       </React.Fragment>
