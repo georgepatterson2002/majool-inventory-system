@@ -29,7 +29,10 @@ class FixSerialStatusRequest(BaseModel):
 
 class LogSaleRequest(BaseModel):
     serial_number: str
-    order_id: str    
+    order_id: str   
+
+class ClearLogRequest(BaseModel):
+    order_id: str
 
 @router.get("/ping")
 def scanner_ping():
@@ -474,4 +477,31 @@ def handle_return_scan(
     except Exception as e:
         print("ERROR in /handle-return-scan:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
-    
+
+@router.post("/clear-inventory-log")
+def clear_inventory_log(req: ClearLogRequest):
+    try:
+        with engine.begin() as conn:
+            # Step 1: Get all serials linked to this order
+            results = conn.execute(text("""
+                SELECT serial_number FROM inventory_log
+                WHERE order_id = :oid
+            """), {"oid": req.order_id}).fetchall()
+
+            # Step 2: Mark those serials as unsold
+            for row in results:
+                conn.execute(text("""
+                    UPDATE inventory_units SET sold = FALSE
+                    WHERE serial_number = :sn
+                """), {"sn": row.serial_number})
+
+            # Step 3: Delete from inventory_log
+            conn.execute(text("""
+                DELETE FROM inventory_log WHERE order_id = :oid
+            """), {"oid": req.order_id})
+
+        return {"success": True, "cleared": len(results)}
+
+    except Exception as e:
+        print("ERROR in /clear-inventory-log:", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
