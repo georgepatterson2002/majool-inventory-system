@@ -30,7 +30,6 @@ def sync_veeqo_orders_job():
 
             response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
-
             raw_orders = response.json()
             if not raw_orders:
                 break
@@ -53,8 +52,6 @@ def sync_veeqo_orders_job():
             order_id = order.get("number")
             shipped_time_str = order.get("shipped_at")
             shipped_time = datetime.fromisoformat(shipped_time_str.replace("Z", "+00:00"))
-
-
             notes = order.get("employee_notes", [])
             serials = [n.get("text", "").strip() for n in notes if n.get("text")]
 
@@ -93,7 +90,8 @@ def sync_veeqo_orders_job():
 
                     for _ in range(quantity):
                         if serial_pointer >= len(serials):
-                            break
+                            print(f"[WARNING] Serial list exhausted early for SKU: {sku} in Order: {order_id}")
+                            continue  # Do NOT break — this preserves the loop
 
                         serial = serials[serial_pointer]
                         serial_pointer += 1
@@ -117,5 +115,10 @@ def sync_veeqo_orders_job():
                                 SET sold = TRUE
                                 WHERE serial_number = :serial;
                             """), {"serial": serial})
+
+            # Log any leftover serials that didn't get assigned
+            if serial_pointer < len(serials):
+                unassigned = serials[serial_pointer:]
+                print(f"[INFO] Unused serials for order {order_id}: {unassigned}")
 
     return updated
