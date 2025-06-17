@@ -78,8 +78,6 @@ def sync_veeqo_orders_job():
                                     INSERT INTO manual_review (order_id, sku, created_at)
                                     VALUES (:order_id, :sku, :created_at)
                                 """), {"order_id": order_id, "sku": sku, "created_at": shipped_time})
-                            elif existing.resolved:
-                                pass
                 continue
 
             serial_pointer = 0
@@ -91,16 +89,35 @@ def sync_veeqo_orders_job():
                     for _ in range(quantity):
                         if serial_pointer >= len(serials):
                             print(f"[WARNING] Serial list exhausted early for SKU: {sku} in Order: {order_id}")
-                            continue  # Do NOT break — this preserves the loop
+                            continue
 
                         serial = serials[serial_pointer]
                         serial_pointer += 1
 
-                        result = conn.execute(text("""
+                        # Check if serial already used
+                        existing_log = conn.execute(text("""
+                            SELECT * FROM inventory_log WHERE serial_number = :serial
+                        """), {"serial": serial}).fetchone()
+
+                        if existing_log:
+                            # Check if it's been returned
+                            was_returned = conn.execute(text("""
+                                SELECT * FROM returns WHERE serial_number = :serial
+                            """), {"serial": serial}).fetchone()
+
+                            if was_returned:
+                                conn.execute(text("""
+                                    DELETE FROM inventory_log WHERE serial_number = :serial
+                                """), {"serial": serial})
+                                print(f"[INFO] Serial {serial} reused after return for Order {order_id}")
+                            else:
+                                print(f"[WARNING] Serial {serial} already in use and not returned — skipping.")
+                                continue
+
+                        # Insert cleanly
+                        conn.execute(text("""
                             INSERT INTO inventory_log (sku, serial_number, order_id, event_time)
                             VALUES (:sku, :serial, :order_id, :event_time)
-                            ON CONFLICT (serial_number) DO NOTHING
-                            RETURNING serial_number
                         """), {
                             "sku": sku,
                             "serial": serial,
@@ -108,15 +125,14 @@ def sync_veeqo_orders_job():
                             "event_time": shipped_time
                         })
 
-                        if result.fetchone():
-                            updated.append({"serial": serial, "order_id": order_id})
-                            conn.execute(text("""
-                                UPDATE inventory_units
-                                SET sold = TRUE
-                                WHERE serial_number = :serial;
-                            """), {"serial": serial})
+                        updated.append({"serial": serial, "order_id": order_id})
 
-            # Log any leftover serials that didn't get assigned
+                        conn.execute(text("""
+                            UPDATE inventory_units
+                            SET sold = TRUE
+                            WHERE serial_number = :serial;
+                        """), {"serial": serial})
+
             if serial_pointer < len(serials):
                 unassigned = serials[serial_pointer:]
                 print(f"[INFO] Unused serials for order {order_id}: {unassigned}")
