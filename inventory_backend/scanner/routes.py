@@ -34,6 +34,10 @@ class LogSaleRequest(BaseModel):
 class ClearLogRequest(BaseModel):
     order_id: str
 
+class NewMasterSKU(BaseModel):
+    master_sku_id: str
+    description: str
+
 @router.get("/ping")
 def scanner_ping():
     return {"scanner": "pong"}
@@ -504,4 +508,34 @@ def clear_inventory_log(req: ClearLogRequest):
 
     except Exception as e:
         print("ERROR in /clear-inventory-log:", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+@router.post("/create-master-sku")
+def create_master_sku(data: NewMasterSKU):
+    try:
+        with engine.connect() as conn:
+            # Check for existing MSKU ID
+            check = conn.execute(
+                text("SELECT 1 FROM master_skus WHERE master_sku_id = :msku"),
+                {"msku": data.master_sku_id}
+            ).fetchone()
+
+            if check:
+                raise HTTPException(status_code=400, detail="Master SKU already exists.")
+
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO master_skus (master_sku_id, description)
+                    VALUES (:msku, :desc)
+                """),
+                {"msku": data.master_sku_id, "desc": data.description}
+            )
+
+        return {"success": True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("ERROR in /create-master-sku:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
