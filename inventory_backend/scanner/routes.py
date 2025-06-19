@@ -38,6 +38,11 @@ class NewMasterSKU(BaseModel):
     master_sku_id: str
     description: str
 
+class NewUser(BaseModel):
+    username: str
+    password_hash: str
+    is_admin: bool = False
+
 @router.get("/ping")
 def scanner_ping():
     return {"scanner": "pong"}
@@ -538,4 +543,29 @@ def create_master_sku(data: NewMasterSKU):
         raise
     except Exception as e:
         print("ERROR in /create-master-sku:", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+    
+@router.post("/create-user")
+def create_user(data: NewUser):
+    try:
+        with engine.begin() as conn:
+            # Check if username exists
+            exists = conn.execute(
+                text("SELECT 1 FROM users WHERE username = :u"),
+                {"u": data.username}
+            ).fetchone()
+
+            if exists:
+                raise HTTPException(status_code=400, detail="Username already exists.")
+
+            conn.execute(
+                text("""
+                    INSERT INTO users (username, password_hash, is_admin)
+                    VALUES (:u, :ph, :admin)
+                """),
+                {"u": data.username, "ph": data.password_hash, "admin": data.is_admin}
+            )
+        return {"success": True}
+    except Exception as e:
+        print("Create user error:", e)
         raise HTTPException(status_code=500, detail="Internal Server Error")
