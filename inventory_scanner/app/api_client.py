@@ -156,3 +156,31 @@ def resolve_manual_review(order_id, sku, user_id):
     except Exception as e:
         print("Error resolving manual review:", e)
         return {"success": False, "detail": str(e)}
+
+def create_master_sku(msku_id, description):
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/create-master-sku",
+            json={"master_sku_id": msku_id, "description": description}
+        )
+        if response.status_code == 200:
+            return {"success": True}
+        else:
+            return {"success": False, "detail": response.json().get("detail", "Unknown error")}
+    except Exception as e:
+        return {"success": False, "detail": str(e)}
+
+def create_user(username, hashed_password, is_admin=False):
+    try:
+        payload = {
+            "username": username,
+            "password_hash": hashed_password,
+            "is_admin": is_admin
+        }
+        r = requests.post(f"{API_BASE_URL}/create-user", json=payload)
+        if r.status_code == 200:
+            return {"success": True}
+        else:
+            return {"success": False, "detail": r.json().get("detail", "Unknown error")}
+    except Exception as e:
+        return {"success": False, "detail": str(e)}

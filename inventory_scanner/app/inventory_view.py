@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QPushButton, QLineEdit, QMessageBox, QAbstractItemView, QTabWidget, QComboBox, QTableWidgetItem, QHeaderView, QDialog, QInputDialog
+    QPushButton, QLineEdit, QMessageBox, QAbstractItemView, QTabWidget, QComboBox, QTableWidgetItem, QHeaderView, QDialog, QInputDialog, QFormLayout, QCheckBox
 )
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtMultimedia import QSoundEffect
@@ -8,7 +8,8 @@ from PyQt5.QtCore import Qt, QUrl, QTimer
 import requests
 import os
 from dotenv import load_dotenv
-from app.api_client import fetch_master_skus, fetch_categories, fetch_brands, fetch_manual_reviews, resolve_manual_review
+from app.api_client import fetch_master_skus, fetch_categories, fetch_brands, fetch_manual_reviews, resolve_manual_review, create_master_sku
+from app.create_user_window import CreateUserForm
 import sys
 
 
@@ -55,6 +56,9 @@ API_BASE_URL = os.getenv("API_BASE_URL")
 class InventoryView(QWidget):
     def __init__(self, user_id, is_admin=False):
         super().__init__()
+
+        self.initialized = False
+
         self.user_id = user_id
         self.setWindowTitle("Majool SN Scanner")
         self.setWindowIcon(QIcon("assets/icon.ico"))
@@ -78,13 +82,11 @@ class InventoryView(QWidget):
         self.refresh_button.clicked.connect(self.load_data)
 
         self.serial_input = QLineEdit()
-        self.serial_input.setPlaceholderText("Scan new serial number")
         self.serial_input.textChanged.connect(self.reset_input_timer)
+        self.serial_input.setPlaceholderText("Scan new serial number")
         self.table.itemSelectionChanged.connect(self.focus_serial_input)
 
-        self.input_timer = QTimer()
-        self.input_timer.setSingleShot(True)
-        self.input_timer.timeout.connect(self.assign_serial)
+        
 
         self.assign_button = QPushButton("Assign Serial to Selected Row")
         self.assign_button.clicked.connect(self.assign_serial)
@@ -96,6 +98,9 @@ class InventoryView(QWidget):
         self.scan_layout.addWidget(self.table)
         self.scan_layout.addWidget(self.serial_input)
         self.scan_layout.addWidget(self.assign_button)
+        self.manual_entry_checkbox = QCheckBox("Manually enter serial number")
+        self.manual_entry_checkbox.stateChanged.connect(self.toggle_manual_mode)
+        self.scan_layout.addWidget(self.manual_entry_checkbox)
 
         self.scan_container = QWidget()
         self.scan_container.setLayout(self.scan_layout)
@@ -111,6 +116,7 @@ class InventoryView(QWidget):
         self.tab_delivery = QWidget()
         self.tab_product = QWidget()
         self.tab_manual_review = QWidget()
+        self.tab_create_user = QWidget()
 
         self.tabs.currentChanged.connect(self.on_tab_changed)
 
@@ -119,6 +125,7 @@ class InventoryView(QWidget):
         if is_admin:
             self.tabs.addTab(self.tab_product, "Add SKU")
             self.tabs.addTab(self.tab_manual_review, "Manual Review")
+            self.tabs.addTab(self.tab_create_user, "Create User")
 
         self.tabs.hide()  # default to hidden
 
@@ -126,11 +133,19 @@ class InventoryView(QWidget):
         self.delivery_layout = QVBoxLayout()
         self.tab_delivery.setLayout(self.delivery_layout)
 
-        self.product_layout = QVBoxLayout()
+        self.load_add_delivery_form()
+
+        self.product_layout = QFormLayout()
         self.tab_product.setLayout(self.product_layout)
 
         self.manual_review_layout = QVBoxLayout()
         self.tab_manual_review.setLayout(self.manual_review_layout)
+
+        self.create_user_layout = QVBoxLayout()
+        self.tab_create_user.setLayout(self.create_user_layout)
+
+        self.user_form = CreateUserForm(admin_user_id=self.user_id)
+        self.create_user_layout.addWidget(self.user_form)
 
         # Placeholder message for now
         self.manual_review_layout.addWidget(QLabel("Manual Review Table Coming Soon..."))
@@ -145,6 +160,10 @@ class InventoryView(QWidget):
         self.brand_dropdown = QComboBox()
         self.brand_dropdown.addItem("Loading...", -1)
 
+        self.master_sku_search = QLineEdit()
+        self.master_sku_search.setPlaceholderText("Search Master SKU...")
+        self.master_sku_search.textChanged.connect(self.filter_master_skus)
+
         self.master_sku_dropdown = QComboBox()
         self.master_sku_dropdown.addItem("Loading...", -1)
 
@@ -155,20 +174,14 @@ class InventoryView(QWidget):
         self.product_submit_button.clicked.connect(self.submit_product)
 
         # Add to layout
-        self.product_layout.addWidget(QLabel("Part Number (SKU):"))
-        self.product_layout.addWidget(self.part_number_input)
+        self.product_layout.addRow("Part Number (SKU):", self.part_number_input)
+        self.product_layout.addRow("Description:", self.product_name_input)
+        #self.product_layout.addRow("Brand:", self.brand_dropdown)
+        self.product_layout.addRow("Search Master SKU:", self.master_sku_search)
+        self.product_layout.addRow("Master SKU:", self.master_sku_dropdown)
+        #self.product_layout.addRow("Category:", self.category_dropdown)
+        self.product_layout.addRow(self.product_submit_button)
 
-        self.product_layout.addWidget(QLabel("Description:"))
-        self.product_layout.addWidget(self.product_name_input)
-
-        self.product_layout.addWidget(QLabel("Brand:"))
-        self.product_layout.addWidget(self.brand_dropdown)
-
-        self.product_layout.addWidget(QLabel("Master SKU:"))
-        self.product_layout.addWidget(self.master_sku_dropdown)
-
-        self.product_layout.addWidget(QLabel("Category:"))
-        self.product_layout.addWidget(self.category_dropdown)
 
         self.product_layout.addWidget(self.product_submit_button)
 
@@ -184,6 +197,22 @@ class InventoryView(QWidget):
         # Load initial scan table
         self.load_data()
         self.serial_input.setFocus()
+
+        self.input_timer = QTimer()
+        self.input_timer.setSingleShot(True)
+        self.input_timer.timeout.connect(self.assign_serial)
+
+        
+
+        # Load initial scan table
+        self.load_data()
+        self.serial_input.setFocus()
+
+        # Initialize Add SKU dropdowns so MSKU search works
+        self.load_product_form_dropdowns()
+
+
+        self.initialized = True
 
     def handle_logout(self):
         from app.ui_main import MainWindow
@@ -207,7 +236,7 @@ class InventoryView(QWidget):
 
     def select_first_valid_row(self):
         for row in range(self.table.rowCount()):
-            unit_id_item = self.table.item(row, 5)
+            unit_id_item = self.table.item(row, 3)
             if unit_id_item and unit_id_item.text().isdigit():
                 self.table.selectRow(row)
                 break
@@ -215,15 +244,14 @@ class InventoryView(QWidget):
     def focus_serial_input(self):
         self.serial_input.setFocus()
     
-    def reset_input_timer(self):
-        self.input_timer.start(150)  # Wait 150ms after typing stops
+    # Wait 50ms after typing stops
 
     def populate_table(self, data):
         from app.api_client import fetch_brands
 
         headers = [
-            "SKU", "Description", "Category", "MASTER SKU",
-            "Brand", "Unit ID", "PO Number"
+            "SKU", "Description", "MASTER SKU",
+            "Unit ID", "PO Number"
         ]
         self.table.setColumnCount(len(headers))
         self.table.setHorizontalHeaderLabels(headers)
@@ -261,9 +289,7 @@ class InventoryView(QWidget):
             values = [
                 row["part_number"],
                 row["master_description"],
-                row["category"],
                 row["master_sku_id"],
-                brand_lookup.get(row["brand"], f"(Unknown ID: {row['brand']})"),
                 row["unit_id"],
                 row["po_number"]
             ]
@@ -282,25 +308,28 @@ class InventoryView(QWidget):
         self.table.setSelectionMode(self.table.SingleSelection)
 
     def check_serial_input(self, text):
+        if self.manual_entry_checkbox.isChecked():
+            return  # Do nothing in manual mode
         text = text.strip()
-
-        # Adjust this condition to fit your SN pattern
-        if len(text) >= 4:  # e.g. SN must be at least 8 characters
+        if len(text) > 4:
             self.assign_serial()
 
     def assign_serial(self):
         selected = self.table.currentRow()
         if selected < 0:
+            self.focus_serial_input()
             return
 
-        unit_id_item = self.table.item(selected, 5)
+        unit_id_item = self.table.item(selected, 3)  # Column index for 'Unit ID' in v1.5
         if not unit_id_item or not unit_id_item.text().isdigit():
+            self.focus_serial_input()
             return
 
         unit_id = int(unit_id_item.text())
         new_serial = self.serial_input.text().strip()
 
-        if not new_serial:
+        if not new_serial or len(new_serial) <= 4:
+            self.focus_serial_input()
             return
 
         try:
@@ -313,158 +342,96 @@ class InventoryView(QWidget):
             if response.status_code == 200:
                 self.serial_input.clear()
                 self.load_data()
-                self.serial_input.setFocus()
+                self.select_first_valid_row()
+                self.focus_serial_input()
+                return
+
             else:
                 try:
                     detail = response.json().get("detail", "Unknown error")
                 except Exception:
                     detail = "Internal server error"
 
-                self.error_sound.play()
-                show_strict_error_dialog(self, new_serial, detail)
+                # Special handling for duplicate
+                if "Serial number already exists" in detail:
+                    confirm = QMessageBox.question(
+                        self,
+                        "Duplicate Serial Detected",
+                        f"Serial '{new_serial}' already exists and may have been sold.\n\nWould you like to process this as a return?",
+                        QMessageBox.Yes | QMessageBox.No
+                    )
 
+                    if confirm == QMessageBox.Yes:
+                        try:
+                            return_response = requests.post(f"{API_BASE_URL}/handle-return-scan", json={
+                                "scanned_serial": new_serial,
+                                "placeholder_unit_id": unit_id,
+                                "user_id": self.user_id
+                            })
+
+                            if return_response.status_code == 200:
+                                QMessageBox.information(self, "Return Complete", f"Serial {new_serial} was marked as returned.")
+                                self.serial_input.clear()
+                                self.load_data()
+                                self.select_first_valid_row()
+                                self.focus_serial_input()
+                                return
+                            else:
+                                msg = return_response.json().get("detail", "Unknown error")
+                                QMessageBox.critical(self, "Return Failed", f"Failed to process return:\n\n{msg}")
+                        except Exception as e:
+                            QMessageBox.critical(self, "Request Error", f"Error contacting server:\n{str(e)}")
+                    else:
+                        self.error_sound.play()
+                        show_strict_error_dialog(self, new_serial, detail)
+                else:
+                    self.error_sound.play()
+                    show_strict_error_dialog(self, new_serial, detail)
 
         except Exception as e:
             self.error_sound.play()
             show_strict_error_dialog(self, new_serial, f"Request failed: {str(e)}")
 
+        self.serial_input.clear()
+        self.select_first_valid_row()
+        self.focus_serial_input()
 
-        self.serial_input.clear()  # Only clear after error handling
 
-
-    def open_add_delivery_window(self):
-        selected = self.product_table.currentRow()
-        if selected < 0:
-            QMessageBox.warning(self, "No Selection", "Please select a product.")
-            return
-
-        product_id_item = self.product_table.item(selected, 5)
-        if not product_id_item or not product_id_item.text().isdigit():
-            QMessageBox.warning(self, "Invalid Row", "You must select a product row.")
-            return
-
-        product_id = int(product_id_item.text())
-
-        from app.add_delivery_window import AddDeliveryWindow
-        self.delivery_window = AddDeliveryWindow(self.user_id, self.load_data, default_product_id=product_id)
-        self.delivery_window.show()
 
     def toggle_mode(self):
         if self.scan_container.isVisible():
             self.scan_container.hide()
             self.delivery_container.show()
             self.toggle_button.setText("Return to Scan Mode")
-            self.load_product_table()
-            self.load_product_form_dropdowns()
         else:
             self.delivery_container.hide()
             self.scan_container.show()
             self.toggle_button.setText("More Tools")
-            self.serial_input.setFocus()
+            QTimer.singleShot(50, self.serial_input.setFocus) 
 
-    def load_product_table(self):
-        from app.api_client import fetch_product_list, add_delivery
+    def load_add_delivery_form(self):
+        from app.add_delivery_window import AddDeliveryForm
 
-        # Map brand_id → brand_name
-        brand_lookup = {b["brand_id"]: b["brand_name"] for b in fetch_brands()}
-
+        # Clean old widgets
         while self.delivery_layout.count():
             item = self.delivery_layout.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.deleteLater()
 
-        # Fetch product list
-        products = fetch_product_list()
-        if not products:
-            self.delivery_layout.addWidget(QLabel("Failed to load products."))
-            return
-
-        # Table to show product list
-        self.product_table = QTableWidget()
-        self.product_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.product_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.product_table.setSelectionMode(QAbstractItemView.SingleSelection)
-
-        headers = ["SKU", "Description", "Category", "MASTER SKU",
-            "Brand", "Product ID"]
-        self.product_table.setColumnCount(len(headers))
-        self.product_table.setHorizontalHeaderLabels(headers)
-
-        # Sort and group by master_sku_id
-        products.sort(key=lambda p: p["master_sku_id"])
-        row_index = 0
-        current_msku = None
-
-        for product in products:
-            if product["master_sku_id"] != current_msku:
-                # Group header
-                self.product_table.insertRow(row_index)
-                group_item = QTableWidgetItem(f"📦 {product['master_sku_id']} – {product['master_description']}")
-                group_item.setBackground(Qt.lightGray)
-                group_item.setFont(QFont("Arial", weight=QFont.Bold))
-                group_item.setFlags(Qt.ItemIsEnabled)
-                self.product_table.setItem(row_index, 0, group_item)
-                self.product_table.setSpan(row_index, 0, 1, len(headers))
-                row_index += 1
-                current_msku = product["master_sku_id"]
-
-            # Product row
-            self.product_table.insertRow(row_index)
-            row_data = [
-                product["part_number"],
-                product["master_description"],
-                product["category"],
-                product["master_sku_id"],
-                brand_lookup.get(product["brand"], f"(Unknown ID: {product['brand']})"),
-                product["product_id"]
-            ]
-            for col, value in enumerate(row_data):
-                self.product_table.setItem(row_index, col, QTableWidgetItem(str(value)))
-            row_index += 1
-
-        self.product_table.resizeColumnsToContents()
-        self.product_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-
-        self.delivery_layout.addWidget(self.product_table)
-
-        confirm_btn = QPushButton("Open Delivery Form")
-        confirm_btn.clicked.connect(self.open_add_delivery_window)
-        self.delivery_layout.addWidget(confirm_btn)
+        # Add new form
+        self.delivery_form = AddDeliveryForm(self.user_id, self.handle_delivery_submitted)
+        self.delivery_layout.addWidget(self.delivery_form)
+    
+    def handle_delivery_submitted(self, go_to_scan=False):
+        self.load_data()
+        if go_to_scan:
+            self.toggle_mode()
         
 
-    def submit_delivery(self):
-        selected = self.product_table.currentRow()
-        if selected < 0:
-            QMessageBox.warning(self, "No Selection", "Please select a product row.")
-            return
-
-        product_id_item = self.product_table.item(selected, 5)
-
-        if not product_id_item or not product_id_item.text().isdigit():
-            QMessageBox.warning(self, "Invalid Row", "You must select a product row, not a group header.")
-            return
-
-        product_id = int(product_id_item.text())
-        quantity_str = self.qty_input.text().strip()
-
-        if not quantity_str.isdigit() or int(quantity_str) <= 0:
-            QMessageBox.warning(self, "Invalid Quantity", "Please enter a positive number.")
-            return
-
-        quantity = int(quantity_str)
-
-        from app.api_client import add_delivery
-        result = add_delivery(product_id, quantity, self.user_id)
-
-        if result["success"]:
-            QMessageBox.information(self, "Success", "Delivery added.")
-            self.toggle_mode()  # Go back to scanner
-            self.load_data()  # Refresh NOSER list
-        else:
-            QMessageBox.critical(self, "Error", f"Failed: {result['detail']}")
-
     def load_product_form_dropdowns(self):
+
+        self.full_master_sku_list = fetch_master_skus()
 
         self.master_sku_dropdown.clear()
         self.category_dropdown.clear()
@@ -476,14 +443,20 @@ class InventoryView(QWidget):
         for brand in brands:
             self.brand_dropdown.addItem(brand["brand_name"], brand["brand_id"])
 
-        for msku in master_skus:
+        for msku in self.full_master_sku_list:
             label = f"{msku['master_sku_id']} – {msku['description']}"
             self.master_sku_dropdown.addItem(label, msku["master_sku_id"])
 
         categories = fetch_categories()
-        for cat in categories:
-            self.category_dropdown.addItem(cat["name"], cat["category_id"])
+        default_index = 0
 
+        for i, cat in enumerate(categories):
+            self.category_dropdown.addItem(cat["name"], cat["category_id"])
+            if cat["category_id"] == 2:
+                default_index = i
+
+        self.category_dropdown.setCurrentIndex(default_index)
+   
     def submit_product(self):
 
         from app.api_client import add_product
@@ -501,13 +474,41 @@ class InventoryView(QWidget):
         if master_sku_id is None or category_id is None:
             QMessageBox.warning(self, "Missing Info", "Please select a Master SKU and Category.")
             return
+        
+        if master_sku_id == "DOESNOTEXIST":  # DOESNOTEXIST ID
+            part_number = self.part_number_input.text().strip()
+            product_name = self.product_name_input.text().strip()
+            suggested_msku = f"MSKU-{part_number}"
+
+            confirm = QMessageBox.question(
+                self,
+                "Create New Master SKU?",
+                f"Master SKU doesn't exist.\nCreate one named '{suggested_msku}'?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+
+            if confirm == QMessageBox.Yes:
+                # Check if it already exists
+                existing_ids = [msku["master_sku_id"] for msku in self.full_master_sku_list]
+                if suggested_msku in existing_ids:
+                    QMessageBox.warning(self, "Already Exists", f"A Master SKU called '{suggested_msku}' already exists.")
+                    return
+
+                # Insert new MSKU
+                from app.api_client import create_master_sku
+                create_result = create_master_sku(suggested_msku, product_name)
+                if not create_result.get("success"):
+                    QMessageBox.critical(self, "MSKU Creation Failed", create_result.get("detail", "Unknown error"))
+                    return
+
+                master_sku_id = suggested_msku  # Use the new MSKU going forward
+
 
         result = add_product(part_number, product_name, brand, master_sku_id, category_id)
 
         if result["success"]:
             QMessageBox.information(self, "Success", "Product added.")
-            self.toggle_mode()       # return to scanner
-            self.load_data()         # refresh NOSER
+            self.load_data()         # Optionally refresh NOSER but stay on the Add SKU tab
         else:
             QMessageBox.critical(self, "Error", f"Failed: {result['detail']}")
 
@@ -593,10 +594,17 @@ class InventoryView(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to resolve: {detail}")
 
     def on_tab_changed(self, index):
-        if self.tabs.tabText(index) == "Manual Review":
+        if not getattr(self, "initialized", False):
+            return  # Avoid premature tab loading during __init__
+
+        tab_text = self.tabs.tabText(index)
+        if tab_text == "Add Delivery":
+            self.load_add_delivery_form()
+        elif tab_text == "Manual Review":
             self.load_manual_review_table()
 
     def fix_missed_scan(self):
+
         row = self.review_table.currentRow()
         if row < 0:
             return
@@ -604,37 +612,111 @@ class InventoryView(QWidget):
         order_id = self.review_table.item(row, 0).text()
         sku = self.review_table.item(row, 1).text()
 
-        # Prompt user for serial number
-        serial_number, ok = QInputDialog.getText(self, "Enter Serial Number", "Scan or type the correct serial number:")
-        if not ok or not serial_number.strip():
+        # Prompt for quantity
+        quantity_str, ok = QInputDialog.getText(self, "Missing Quantity", "How many items are missing for this order?")
+        if not ok:
             return
 
-        serial_number = serial_number.strip()
-
-        # Step 1: Mark inventory as sold
-        update_response = requests.post(f"{API_BASE_URL}/fix-serial-status", json={
-            "serial_number": serial_number
-        })
-
-        if update_response.status_code != 200:
-            QMessageBox.critical(self, "Error", f"Failed to update inventory: {update_response.text}")
+        if not quantity_str.strip().isdigit():
+            QMessageBox.warning(self, "Invalid Input", "Please enter a whole number (e.g. 1, 2, 3).")
             return
 
-        # Step 2: Insert into log
-        insert_response = requests.post(f"{API_BASE_URL}/insert-inventory-log", json={
-            "serial_number": serial_number,
-            "order_id": order_id
-        })
-
-        if insert_response.status_code != 200:
-            QMessageBox.critical(self, "Error", f"Failed to log inventory: {insert_response.text}")
+        quantity = int(quantity_str.strip())
+        if quantity <= 0:
+            QMessageBox.warning(self, "Invalid Input", "Quantity must be greater than 0.")
             return
 
-        # Step 3: Resolve manual review
-        resolve_response = resolve_manual_review(order_id, sku, self.user_id)
-        if resolve_response.get("success"):
-            QMessageBox.information(self, "Fix Complete", f"Serial {serial_number} linked and review resolved.")
+        scanned_serials = []
+
+        # Pre-check: remove accidental logs if any exist for this order
+        r_cleanup = requests.post(f"{API_BASE_URL}/clear-inventory-log", json={"order_id": order_id})
+        if r_cleanup.status_code != 200:
+            QMessageBox.warning(self, "Pre-check Failed", f"Could not clean previous logs:\n\n{r_cleanup.text}")
+            return
+
+        for i in range(quantity):
+            while True:
+                sn, ok = QInputDialog.getText(self, f"Serial {i+1} of {quantity}", f"Scan or enter serial number #{i+1}:")
+                if not ok or not sn.strip():
+                    QMessageBox.warning(self, "Cancelled", "Serial input cancelled.")
+                    return
+
+                serial_number = sn.strip()
+
+                if serial_number in scanned_serials:
+                    QMessageBox.warning(self, "Duplicate Serial", f"Serial '{serial_number}' already entered for this fix.")
+                    continue  # Retry input
+
+                # Step 1: Update inventory
+                r1 = requests.post(f"{API_BASE_URL}/fix-serial-status", json={"serial_number": serial_number})
+                if r1.status_code != 200:
+                    QMessageBox.warning(self, "Invalid Serial", f"Could not mark serial as sold:\n\n{r1.text}")
+                    continue  # Allow retry instead of canceling everything
+
+                # Step 2: Insert into log
+                r2 = requests.post(f"{API_BASE_URL}/insert-inventory-log", json={
+                    "serial_number": serial_number,
+                    "order_id": order_id
+                })
+                if r2.status_code != 200:
+                    QMessageBox.warning(self, "Log Failure", f"Could not log serial:\n\n{r2.text}")
+                    continue  # Allow retry instead of canceling everything
+
+                scanned_serials.append(serial_number)
+                break  # Proceed to next serial after successful insert
+
+        # Step 3: Resolve manual review after all are successful
+        result = resolve_manual_review(order_id, sku, self.user_id)
+        if result.get("success"):
+            QMessageBox.information(self, "Review Resolved", f"{quantity} serials logged. Review resolved.")
             self.load_manual_review_table()
         else:
-            detail = resolve_response.get("detail", "Unknown error")
-            QMessageBox.critical(self, "Error", f"Failed to resolve: {detail}")
+            QMessageBox.warning(self, "Resolve Error", f"Partial success: Serials added, but resolve failed.\n{result.get('detail')}")
+
+    def filter_master_skus(self):
+        text = self.master_sku_search.text().strip().lower()
+
+        if not hasattr(self, "full_master_sku_list"):
+            return
+
+        if not text:
+            filtered = self.full_master_sku_list
+        else:
+            filtered = [
+                msku for msku in self.full_master_sku_list
+                if text in str(msku["master_sku_id"]).lower() or text in msku["description"].lower()
+            ]
+
+        self.master_sku_dropdown.clear()
+
+        if not filtered:
+            self.master_sku_dropdown.addItem("No matching results", -1)
+            self.master_sku_dropdown.model().item(0).setEnabled(False)
+            return
+
+        for msku in filtered:
+            label = f"{msku['master_sku_id']} – {msku['description']}"
+            self.master_sku_dropdown.addItem(label, msku["master_sku_id"])
+        
+        self.master_sku_dropdown.setCurrentIndex(0)
+
+    def reset_input_timer(self):
+        text = self.serial_input.text().strip()
+        if len(text) > 4:
+            self.input_timer.start(50)
+
+    def toggle_manual_mode(self):
+        if self.manual_entry_checkbox.isChecked():
+            try:
+                self.serial_input.textChanged.disconnect(self.reset_input_timer)
+            except Exception:
+                pass
+            self.serial_input.setPlaceholderText("Type full serial and press Enter")
+            self.serial_input.returnPressed.connect(self.assign_serial)
+        else:
+            try:
+                self.serial_input.returnPressed.disconnect(self.assign_serial)
+            except Exception:
+                pass
+            self.serial_input.setPlaceholderText("Scan new serial number")
+            self.serial_input.textChanged.connect(self.reset_input_timer)
