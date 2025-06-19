@@ -213,13 +213,16 @@ function App() {
                             SKU: {p.part_number}
                           </td>
                         </tr>
-                        {p.serials.map((s, idx) => (
+                        {p.serials
+                          .slice()
+                          .sort((a, b) => new Date(b.scanned_at) - new Date(a.scanned_at)) // newest first
+                          .map((s, idx) => (
                           <tr key={idx} className="text-xs text-gray-600 bg-gray-50">
                             <td colSpan={4} className="border px-3 py-1 pl-10">
-                              <div className="flex flex-wrap gap-4">
-                                <span><strong>Serial:</strong> {s.serial_number}</span>
-                                <span><strong>PO:</strong> {s.po_number}</span>
-                                <span><strong>Scanned:</strong> {new Date(s.scanned_at).toLocaleString()}</span>
+                              <div className="grid grid-cols-3 gap-4 w-full text-sm">
+                                <div><span className="font-semibold text-gray-700">Serial:</span> {s.serial_number}</div>
+                                <div><span className="font-semibold text-gray-700">PO:</span> {s.po_number}</div>
+                                <div><span className="font-semibold text-gray-700">Scanned:</span> {new Date(s.scanned_at).toLocaleString()}</div>
                               </div>
                             </td>
 
