@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-    QPushButton, QLineEdit, QMessageBox, QAbstractItemView, QTabWidget, QComboBox, QTableWidgetItem, QHeaderView, QDialog, QInputDialog, QFormLayout, QCheckBox
+    QPushButton, QLineEdit, QMessageBox, QAbstractItemView, QTabWidget, QComboBox, QTableWidgetItem, QHeaderView, QDialog, QInputDialog, QFormLayout, QCheckBox, QHBoxLayout, QSizePolicy
 )
 from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtMultimedia import QSoundEffect
@@ -98,9 +98,24 @@ class InventoryView(QWidget):
         self.scan_layout.addWidget(self.table)
         self.scan_layout.addWidget(self.serial_input)
         self.scan_layout.addWidget(self.assign_button)
+
         self.manual_entry_checkbox = QCheckBox("Manually enter serial number")
         self.manual_entry_checkbox.stateChanged.connect(self.toggle_manual_mode)
-        self.scan_layout.addWidget(self.manual_entry_checkbox)
+        self.manual_entry_checkbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self.mistake_mode_checkbox = QCheckBox("Mistake Mode")
+        self.mistake_mode_checkbox.setToolTip("Ignore return prompts until a valid serial is scanned.")
+        self.mistake_mode_checkbox.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        checkbox_row = QHBoxLayout()
+        checkbox_row.setSpacing(1)  #  smaller spacing between checkboxes
+        checkbox_row.setContentsMargins(0, 0, 0, 0)  #  no outer padding
+        checkbox_row.addWidget(self.manual_entry_checkbox)
+        checkbox_row.addWidget(self.mistake_mode_checkbox)
+
+        checkbox_row.addStretch()
+
+        self.scan_layout.addLayout(checkbox_row)
 
         self.scan_container = QWidget()
         self.scan_container.setLayout(self.scan_layout)
@@ -344,24 +359,58 @@ class InventoryView(QWidget):
                 self.load_data()
                 self.select_first_valid_row()
                 self.focus_serial_input()
+
+                if self.mistake_mode_checkbox.isChecked():
+                    msg = QMessageBox(self)
+                    msg.setIcon(QMessageBox.Information)
+                    msg.setWindowTitle("Valid Serial Found")
+                    msg.setText(f"Serial '{new_serial}' accepted.\nExiting Mistake Mode.")
+                    ok_btn = msg.addButton("OK", QMessageBox.AcceptRole)
+                    msg.setDefaultButton(None)
+                    ok_btn.setFocusPolicy(Qt.NoFocus)
+                    msg.setWindowModality(Qt.ApplicationModal)
+                    msg.raise_()
+                    msg.activateWindow()
+                    msg.exec_()
+
+                    self.serial_input.setFocus()
+                    self.mistake_mode_checkbox.setChecked(False)
+
                 return
 
             else:
                 try:
-                    detail = response.json().get("detail", "Unknown error")
-                except Exception:
-                    detail = "Internal server error"
+                    detail = response.json().get("detail", response.text)
+                except Exception as e:
+                    detail = f"Unexpected response from server (status {response.status_code})"
 
-                # Special handling for duplicate
+                print(f"[ERROR] assign_serial failed: {detail}")
+
                 if "Serial number already exists" in detail:
-                    confirm = QMessageBox.question(
-                        self,
-                        "Duplicate Serial Detected",
-                        f"Serial '{new_serial}' already exists and may have been sold.\n\nWould you like to process this as a return?",
-                        QMessageBox.Yes | QMessageBox.No
-                    )
+                    if self.mistake_mode_checkbox.isChecked():
+                        self.error_sound.play()
+                        self.serial_input.clear()
+                        self.focus_serial_input()
+                        return
 
-                    if confirm == QMessageBox.Yes:
+                    # Duplicate serial - offer return
+                    box = QMessageBox(self)
+                    box.setIcon(QMessageBox.Question)
+                    box.setWindowTitle("Duplicate Serial Detected")
+                    box.setText(
+                        f"Serial '{new_serial}' already exists and may have been sold.\n\nWould you like to process this as a return?"
+                    )
+                    yes_btn = box.addButton("Yes", QMessageBox.YesRole)
+                    no_btn = box.addButton("No", QMessageBox.NoRole)
+                    box.setDefaultButton(None)
+                    yes_btn.setFocusPolicy(Qt.NoFocus)
+                    no_btn.setFocusPolicy(Qt.NoFocus)
+                    box.setWindowModality(Qt.ApplicationModal)
+                    box.raise_()
+                    box.activateWindow()
+                    box.exec_()
+
+                    if box.clickedButton() == yes_btn:
                         try:
                             return_response = requests.post(f"{API_BASE_URL}/handle-return-scan", json={
                                 "scanned_serial": new_serial,
@@ -370,23 +419,46 @@ class InventoryView(QWidget):
                             })
 
                             if return_response.status_code == 200:
-                                QMessageBox.information(self, "Return Complete", f"Serial {new_serial} was marked as returned.")
                                 self.serial_input.clear()
                                 self.load_data()
                                 self.select_first_valid_row()
                                 self.focus_serial_input()
-                                return
+
+                                if self.mistake_mode_checkbox.isChecked():
+                                    msg = QMessageBox(self)
+                                    msg.setIcon(QMessageBox.Information)
+                                    msg.setWindowTitle("Valid Serial Found")
+                                    msg.setText(f"Serial '{new_serial}' accepted.\nExiting Mistake Mode.")
+                                    ok_btn = msg.addButton("OK", QMessageBox.AcceptRole)
+                                    msg.setDefaultButton(None)
+                                    ok_btn.setFocusPolicy(Qt.NoFocus)
+                                    msg.setWindowModality(Qt.ApplicationModal)
+                                    msg.raise_()
+                                    msg.activateWindow()
+                                    msg.exec_()
+                                    self.mistake_mode_checkbox.setChecked(False)
+
+                                return  # ← CRITICAL: prevents fallback to /assign-serial after return
                             else:
                                 msg = return_response.json().get("detail", "Unknown error")
                                 QMessageBox.critical(self, "Return Failed", f"Failed to process return:\n\n{msg}")
+                                return  # ← PREVENTS FALLBACK attempt after failure
                         except Exception as e:
                             QMessageBox.critical(self, "Request Error", f"Error contacting server:\n{str(e)}")
+                            return  # ← PREVENTS FALLBACK
                     else:
                         self.error_sound.play()
                         show_strict_error_dialog(self, new_serial, detail)
+
                 else:
+                    #  Show any other error — including prefix mismatch
                     self.error_sound.play()
                     show_strict_error_dialog(self, new_serial, detail)
+
+                self.serial_input.clear()
+                self.select_first_valid_row()
+                self.focus_serial_input()
+                return
 
         except Exception as e:
             self.error_sound.play()
