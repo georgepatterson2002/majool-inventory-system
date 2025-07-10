@@ -1,5 +1,7 @@
 // App.jsx
 import React, { useEffect, useState } from "react";
+import InsightsTab from "./InsightsTab";
+
 
 const API_HOST = import.meta.env.VITE_API_HOST;
 
@@ -162,6 +164,15 @@ function App() {
     </span>
   )}
 </button>
+
+<button
+  onClick={() => handleTabChange("insights")}
+  className={`px-4 py-2 rounded ${activeTab === "insights" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"}`}
+>
+  📊 Insights
+</button>
+
+
       </div>
 
       {activeTab === "warehouse" && (
@@ -364,6 +375,8 @@ function App() {
     )}
   </div>
 )}
+  {/* Insights Tab */}
+{activeTab === "insights" && <InsightsTab />}
     </div>
   );
 }

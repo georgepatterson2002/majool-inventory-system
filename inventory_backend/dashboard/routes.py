@@ -97,3 +97,33 @@ def sync_veeqo_orders():
         "serials_updated": updated,
         "count": len(updated)
     }
+
+@router.get("/insights/po-summary")
+def get_po_summary(po_number: str):
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT 
+                p.part_number AS sku,
+                p.product_name,
+                iu.po_number,
+                iu.serial_assigned_at::date AS received_date
+            FROM inventory_units iu
+            JOIN products p ON iu.product_id = p.product_id
+            WHERE iu.po_number = :po
+            ORDER BY iu.serial_assigned_at DESC
+        """), {"po": po_number}).fetchall()
+
+        summary = {}
+        for row in result:
+            key = (row.sku, row.product_name, row.received_date)
+            summary[key] = summary.get(key, 0) + 1  # count quantity per SKU per date
+
+        return [
+            {
+                "sku": sku,
+                "product_name": name,
+                "received_date": str(date),
+                "quantity": qty
+            }
+            for (sku, name, date), qty in summary.items()
+        ]

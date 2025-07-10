@@ -94,13 +94,11 @@ def sync_veeqo_orders_job():
                         serial = serials[serial_pointer]
                         serial_pointer += 1
 
-                        # Check if serial already used
                         existing_log = conn.execute(text("""
                             SELECT * FROM inventory_log WHERE serial_number = :serial
                         """), {"serial": serial}).fetchone()
 
                         if existing_log:
-                            # Check if it's been returned
                             was_returned = conn.execute(text("""
                                 SELECT * FROM returns WHERE serial_number = :serial
                             """), {"serial": serial}).fetchone()
@@ -114,7 +112,6 @@ def sync_veeqo_orders_job():
                                 print(f"[WARNING] Serial {serial} already in use and not returned — skipping.")
                                 continue
 
-                        # Insert cleanly
                         conn.execute(text("""
                             INSERT INTO inventory_log (sku, serial_number, order_id, event_time)
                             VALUES (:sku, :serial, :order_id, :event_time)
@@ -132,6 +129,54 @@ def sync_veeqo_orders_job():
                             SET sold = TRUE
                             WHERE serial_number = :serial;
                         """), {"serial": serial})
+
+            # HARD LIMIT: Only apply SSD logic for orders shipped on or after July 11, 2025
+            ssd_cutoff = datetime(2025, 7, 11, 0, 0, 0, tzinfo=pytz.timezone("America/Los_Angeles"))
+
+            if shipped_time >= ssd_cutoff:
+                total_ssds_needed = sum(
+                    item.get("quantity", 0)
+                    for allocation in order.get("allocations", [])
+                    for item in allocation.get("line_items", [])
+                    if "+1tb" in (item.get("sellable", {}).get("sku_code") or "").lower()
+                )
+
+                if total_ssds_needed > 0:
+                    existing_ssd_count = conn.execute(text("""
+                        SELECT COUNT(*) FROM inventory_log il
+                        JOIN inventory_units iu ON il.serial_number = iu.serial_number
+                        WHERE il.order_id = :order_id AND iu.ssd_id = 2
+                    """), {"order_id": order_id}).scalar()
+
+                    remaining = total_ssds_needed - existing_ssd_count
+                    if remaining > 0:
+                        ssd_rows = conn.execute(text("""
+                            SELECT serial_number FROM inventory_units
+                            WHERE sold = FALSE AND ssd_id = 2
+                            ORDER BY received_at ASC
+                            LIMIT :qty
+                        """), {"qty": remaining}).fetchall()
+
+                        if len(ssd_rows) < remaining:
+                            print(f"[WARNING] Only found {len(ssd_rows)} available SSDs for Order {order_id}, needed {remaining}")
+
+                        for i in range(min(remaining, len(ssd_rows))):
+                            ssd_serial = ssd_rows[i].serial_number
+
+                            conn.execute(text("""
+                                INSERT INTO inventory_log (sku, serial_number, order_id, event_time)
+                                VALUES ('SSD-1TB', :serial, :order_id, :event_time)
+                            """), {
+                                "serial": ssd_serial,
+                                "order_id": order_id,
+                                "event_time": shipped_time
+                            })
+
+                            conn.execute(text("""
+                                UPDATE inventory_units SET sold = TRUE WHERE serial_number = :serial
+                            """), {"serial": ssd_serial})
+
+                            print(f"[SSD] Marked 1TB SSD {ssd_serial} as sold for Order {order_id}")
 
             if serial_pointer < len(serials):
                 unassigned = serials[serial_pointer:]
