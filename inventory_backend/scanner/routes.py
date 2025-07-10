@@ -293,8 +293,8 @@ def add_product(data: NewProduct):
         with engine.begin() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO products (part_number, product_name, brand, master_sku_id, category_id)
-                    VALUES (:pn, :name, :brand, :msku, :cat)
+                    INSERT INTO products (part_number, product_name, brand, master_sku_id, category_id, ssd_id)
+                    VALUES (:pn, :name, :brand, :msku, :cat, :ssd_id)
                 """),
                 {
                     "pn": data.part_number,
@@ -571,3 +571,13 @@ def create_user(data: NewUser):
     except Exception as e:
         print("Create user error:", e)
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@router.get("/ssds")
+def get_ssd_types():
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT ssd_id, label FROM ssds ORDER BY ssd_id"))
+            return [dict(row) for row in result.fetchall()]
+    except Exception as e:
+        print("ERROR in /ssds:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch SSD types")
