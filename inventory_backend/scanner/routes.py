@@ -298,11 +298,26 @@ def add_product(data: NewProduct):
                 raise HTTPException(status_code=400, detail="Product already exists.")
 
         # Insert new product
-        with engine.begin() as conn:
+        if data.ssd_id is not None:
             conn.execute(
                 text("""
                     INSERT INTO products (part_number, product_name, brand, master_sku_id, category_id, ssd_id)
                     VALUES (:pn, :name, :brand, :msku, :cat, :ssd_id)
+                """),
+                {
+                    "pn": data.part_number,
+                    "name": data.product_name,
+                    "brand": data.brand,
+                    "msku": data.master_sku_id,
+                    "cat": data.category_id,
+                    "ssd_id": data.ssd_id
+                }
+            )
+        else:
+            conn.execute(
+                text("""
+                    INSERT INTO products (part_number, product_name, brand, master_sku_id, category_id)
+                    VALUES (:pn, :name, :brand, :msku, :cat)
                 """),
                 {
                     "pn": data.part_number,
