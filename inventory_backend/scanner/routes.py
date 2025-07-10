@@ -45,6 +45,14 @@ class NewUser(BaseModel):
     password_hash: str
     is_admin: bool = False
 
+class DisposalRequest(BaseModel):
+    unit_id: int
+    original_product_id: int
+
+class RepairRequest(BaseModel):
+    unit_id: int
+    new_product_id: Optional[int] = None
+
 @router.get("/ping")
 def scanner_ping():
     return {"scanner": "pong"}
@@ -581,3 +589,115 @@ def get_ssd_types():
     except Exception as e:
         print("ERROR in /ssds:", str(e))
         raise HTTPException(status_code=500, detail="Failed to fetch SSD types")
+
+@router.post("/dispose-unit")
+def dispose_unit(req: DisposalRequest):
+    try:
+        with engine.begin() as conn:
+            # Check if already disposed
+            existing = conn.execute(
+                text("SELECT 1 FROM disposals WHERE unit_id = :uid"),
+                {"uid": req.unit_id}
+            ).fetchone()
+
+            if existing:
+                raise HTTPException(status_code=400, detail="This unit is already marked as disposed.")
+
+            # Mark unit as sold
+            conn.execute(
+                text("UPDATE inventory_units SET sold = TRUE WHERE unit_id = :uid"),
+                {"uid": req.unit_id}
+            )
+
+            # Log disposal
+            conn.execute(
+                text("""
+                    INSERT INTO disposals (unit_id, original_product_id)
+                    VALUES (:uid, :pid)
+                """),
+                {"uid": req.unit_id, "pid": req.original_product_id}
+            )
+
+        return {"success": True}
+
+    except Exception as e:
+        print("ERROR in /dispose-unit:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to mark disposal")
+
+@router.get("/damaged-units")
+def get_damaged_units():
+    try:
+        query = text("""
+            SELECT 
+                iu.unit_id,
+                iu.serial_number,
+                iu.po_number,
+                iu.product_id,
+                p.part_number,
+                p.product_name
+            FROM inventory_units iu
+            JOIN products p ON iu.product_id = p.product_id
+            WHERE iu.is_damaged = TRUE AND iu.sold = FALSE
+            ORDER BY iu.unit_id DESC
+        """)
+        with engine.connect() as conn:
+            rows = conn.execute(query).fetchall()
+            keys = rows[0].keys() if rows else []
+            return [dict(zip(keys, row)) for row in rows]
+    except Exception as e:
+        print("ERROR in /damaged-units:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch damaged units")
+
+@router.post("/mark-repaired")
+def mark_repaired(req: RepairRequest):
+    try:
+        with engine.begin() as conn:
+            # 1. Look up original product_id
+            original = conn.execute(
+                text("SELECT product_id FROM inventory_units WHERE unit_id = :uid"),
+                {"uid": req.unit_id}
+            ).fetchone()
+
+            if not original:
+                raise HTTPException(status_code=404, detail="Unit not found")
+
+            old_pid = original.product_id
+            new_pid = req.new_product_id or old_pid
+
+            # 2. Update inventory unit
+            if req.new_product_id:
+                conn.execute(
+                    text("""
+                        UPDATE inventory_units
+                        SET is_damaged = FALSE,
+                            product_id = :pid
+                        WHERE unit_id = :uid
+                    """),
+                    {"uid": req.unit_id, "pid": new_pid}
+                )
+            else:
+                conn.execute(
+                    text("""
+                        UPDATE inventory_units
+                        SET is_damaged = FALSE
+                        WHERE unit_id = :uid
+                    """),
+                    {"uid": req.unit_id}
+                )
+
+            # 3. Log the repair
+            conn.execute(
+                text("""
+                    INSERT INTO repairs (unit_id, old_product_id, new_product_id)
+                    VALUES (:uid, :old_pid, :new_pid)
+                """),
+                {"uid": req.unit_id, "old_pid": old_pid, "new_pid": new_pid}
+            )
+
+        return {"success": True}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("ERROR in /mark-repaired:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to mark item as repaired")
