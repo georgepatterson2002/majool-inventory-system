@@ -53,7 +53,8 @@ function App() {
         existing.serials.push({
           serial_number: row.serial_number,
           po_number: row.po_number,
-          scanned_at: row.serial_assigned_at
+          scanned_at: row.serial_assigned_at,
+          is_damaged: row.is_damaged || false  // fallback to false if missing
         });
       }
 
@@ -180,62 +181,99 @@ function App() {
                   .localeCompare(
                     b.master_sku_id.startsWith("MSKU-") ? b.master_sku_id.slice(5) : b.master_sku_id,
                     undefined,
-                    { numeric: true, sensitivity: 'base' }
+                    { numeric: true, sensitivity: "base" }
                   )
               )
               .map((group) => {
-              const totalQty = group.products.reduce((sum, p) => sum + p.serials.length, 0);
-              if (totalQty === 0) return null;  // SKIP zero-qty rows
+                const totalQty = group.products.reduce((sum, p) => sum + p.serials.length, 0);
+                if (totalQty === 0) return null;
 
-              const isOpen = expandedSkus.has(group.master_sku_id);
-              const toggle = () => {
-                const next = new Set(expandedSkus);
-                isOpen ? next.delete(group.master_sku_id) : next.add(group.master_sku_id);
-                setExpandedSkus(next);
-              };
+                const isOpen = expandedSkus.has(group.master_sku_id);
+                const toggle = () => {
+                  const next = new Set(expandedSkus);
+                  isOpen ? next.delete(group.master_sku_id) : next.add(group.master_sku_id);
+                  setExpandedSkus(next);
+                };
 
-              return (
-                <React.Fragment key={group.master_sku_id}>
-                  <tr onClick={toggle} className="cursor-pointer hover:bg-gray-100 font-semibold">
-                    <td className="border px-3 py-2">
-                      {group.master_sku_id.startsWith("MSKU-") ? group.master_sku_id.slice(5) : group.master_sku_id}
-                    </td>
-                    <td className="border px-3 py-2">{group.description}</td>
-                    <td className="border px-3 py-2">{totalQty}</td>
-                  </tr>
+                return (
+                  <React.Fragment key={group.master_sku_id}>
+                    <tr onClick={toggle} className="cursor-pointer hover:bg-gray-100 font-semibold">
+                      <td className="border px-3 py-2">
+                        {group.master_sku_id.startsWith("MSKU-")
+                          ? group.master_sku_id.slice(5)
+                          : group.master_sku_id}
+                      </td>
+                      <td className="border px-3 py-2">{group.description}</td>
+                      <td className="border px-3 py-2">{totalQty}</td>
+                    </tr>
 
-                  {isOpen && group.products
-                    .filter((p) => p.serials.length > 0) // Hide SKUs with 0 serials
-                    .map((p) => (
-                      <React.Fragment key={p.product_id}>
-                        <tr className="text-sm bg-white">
-                          <td colSpan={4} className="border px-3 py-2 pl-6 text-gray-700">
-                            SKU: {p.part_number}
-                          </td>
-                        </tr>
-                        {p.serials
-                          .slice()
-                          .sort((a, b) => new Date(b.scanned_at) - new Date(a.scanned_at)) // newest first
-                          .map((s, idx) => (
-                          <tr key={idx} className="text-xs text-gray-600 bg-gray-50">
-                            <td colSpan={4} className="border px-3 py-1 pl-10">
-                              <div className="grid grid-cols-3 gap-4 w-full text-sm">
-                                <div><span className="font-semibold text-gray-700">Serial:</span> {s.serial_number}</div>
-                                <div><span className="font-semibold text-gray-700">PO:</span> {s.po_number}</div>
-                                <div><span className="font-semibold text-gray-700">Scanned:</span> {new Date(s.scanned_at).toLocaleString()}</div>
-                              </div>
-                            </td>
+                    {isOpen &&
+                      group.products
+                        .filter((p) => p.serials.length > 0)
+                        .map((p) => {
+                          const goodSerials = p.serials.filter((s) => !s.is_damaged);
+                          const damagedSerials = p.serials.filter((s) => s.is_damaged);
 
-                          </tr>
-                        ))}
-                      </React.Fragment>
-))}
-                </React.Fragment>
-              );
-            })}
+                          const renderSerial = (s, idx, isDamaged = false) => (
+                            <tr key={`${s.serial_number}-${idx}`} className="text-xs text-gray-600 bg-gray-50">
+                              <td colSpan={4} className="border px-3 py-1 pl-10">
+                                <div className="grid grid-cols-3 gap-4 w-full text-sm">
+                                  <div>
+                                    <span className="font-semibold text-gray-700">Serial:</span>{" "}
+                                    {s.serial_number}{" "}
+                                    {isDamaged && (
+                                      <span className="text-red-600 font-semibold">(Damaged)</span>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold text-gray-700">PO:</span> {s.po_number}
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold text-gray-700">Scanned:</span>{" "}
+                                    {new Date(s.scanned_at).toLocaleString()}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+
+                          return (
+                            <React.Fragment key={p.product_id}>
+                              <tr className="text-sm bg-white">
+                                <td colSpan={4} className="border px-3 py-2 pl-6 text-gray-700">
+                                  SKU: {p.part_number}
+                                </td>
+                              </tr>
+
+                              {goodSerials
+                                .sort((a, b) => new Date(b.scanned_at) - new Date(a.scanned_at))
+                                .map((s, idx) => renderSerial(s, idx, false))}
+
+                              {damagedSerials.length > 0 && (
+                                <>
+                                  <tr className="bg-red-50">
+                                    <td
+                                      colSpan={4}
+                                      className="px-3 py-1 text-xs text-red-700 font-semibold pl-10"
+                                    >
+                                      Damaged Items:
+                                    </td>
+                                  </tr>
+                                  {damagedSerials
+                                    .sort((a, b) => new Date(b.scanned_at) - new Date(a.scanned_at))
+                                    .map((s, idx) => renderSerial(s, idx, true))}
+                                </>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                  </React.Fragment>
+                );
+              })}
           </tbody>
         </table>
       )}
+
 
  {/* Inventory Log Table */}
       {activeTab === "log" && (
