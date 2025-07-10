@@ -14,7 +14,8 @@ function InsightsTab() {
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/insights/po-summary?po_number=${encodeURIComponent(poNumber)}`);
+      const res = await fetch(`${import.meta.env.VITE_API_HOST}/insights/po-summary?po_number=${encodeURIComponent(poNumber)}`);
+
       const data = await res.json();
       setResults(data);
     } catch (err) {
