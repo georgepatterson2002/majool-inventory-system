@@ -585,7 +585,7 @@ def get_ssd_types():
     try:
         with engine.connect() as conn:
             result = conn.execute(text("SELECT ssd_id, label FROM ssds ORDER BY ssd_id"))
-            return [dict(row) for row in result.fetchall()]
+            return result.mappings().all()
     except Exception as e:
         print("ERROR in /ssds:", str(e))
         raise HTTPException(status_code=500, detail="Failed to fetch SSD types")
