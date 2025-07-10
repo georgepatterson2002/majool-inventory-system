@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel
 from sqlalchemy import text
+from typing import Optional
 from ..database import engine
 from ..security import verify_password
 import traceback
@@ -18,6 +19,7 @@ class NewProduct(BaseModel):
     brand: int
     master_sku_id: str
     category_id: int
+    ssd_id: Optional[int] = None
 
 class ResolveRequest(BaseModel):
     order_id: str
