@@ -145,7 +145,8 @@ def sync_veeqo_orders_job():
                     existing_ssd_count = conn.execute(text("""
                         SELECT COUNT(*) FROM inventory_log il
                         JOIN inventory_units iu ON il.serial_number = iu.serial_number
-                        WHERE il.order_id = :order_id AND iu.ssd_id = 2
+                        JOIN products p ON iu.product_id = p.product_id
+                        WHERE il.order_id = :order_id AND p.ssd_id = 2
                     """), {"order_id": order_id}).scalar()
 
                     remaining = total_ssds_needed - existing_ssd_count
