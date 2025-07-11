@@ -287,8 +287,8 @@ def get_brands():
 @router.post("/add-product")
 def add_product(data: NewProduct):
     try:
-        # Check for duplicate SKU
-        with engine.connect() as conn:
+        with engine.begin() as conn:
+            # Check for duplicate SKU
             check = conn.execute(
                 text("SELECT 1 FROM products WHERE part_number = :sku"),
                 {"sku": data.part_number}
@@ -297,42 +297,44 @@ def add_product(data: NewProduct):
             if check:
                 raise HTTPException(status_code=400, detail="Product already exists.")
 
-        # Insert new product
-        if data.ssd_id is not None:
-            conn.execute(
-                text("""
-                    INSERT INTO products (part_number, product_name, brand, master_sku_id, category_id, ssd_id)
-                    VALUES (:pn, :name, :brand, :msku, :cat, :ssd_id)
-                """),
-                {
-                    "pn": data.part_number,
-                    "name": data.product_name,
-                    "brand": data.brand,
-                    "msku": data.master_sku_id,
-                    "cat": data.category_id,
-                    "ssd_id": data.ssd_id
-                }
-            )
-        else:
-            conn.execute(
-                text("""
-                    INSERT INTO products (part_number, product_name, brand, master_sku_id, category_id)
-                    VALUES (:pn, :name, :brand, :msku, :cat)
-                """),
-                {
-                    "pn": data.part_number,
-                    "name": data.product_name,
-                    "brand": data.brand,
-                    "msku": data.master_sku_id,
-                    "cat": data.category_id
-                }
-            )
+            # Insert new product
+            if data.ssd_id is not None:
+                conn.execute(
+                    text("""
+                        INSERT INTO products (part_number, product_name, brand, master_sku_id, category_id, ssd_id)
+                        VALUES (:pn, :name, :brand, :msku, :cat, :ssd_id)
+                    """),
+                    {
+                        "pn": data.part_number,
+                        "name": data.product_name,
+                        "brand": data.brand,
+                        "msku": data.master_sku_id,
+                        "cat": data.category_id,
+                        "ssd_id": data.ssd_id
+                    }
+                )
+            else:
+                conn.execute(
+                    text("""
+                        INSERT INTO products (part_number, product_name, brand, master_sku_id, category_id)
+                        VALUES (:pn, :name, :brand, :msku, :cat)
+                    """),
+                    {
+                        "pn": data.part_number,
+                        "name": data.product_name,
+                        "brand": data.brand,
+                        "msku": data.master_sku_id,
+                        "cat": data.category_id
+                    }
+                )
 
         return {"success": True}
+
     except Exception as e:
         print("ERROR in /add-product:", str(e))
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
 
 @router.get("/master-skus")
 def get_master_skus():
