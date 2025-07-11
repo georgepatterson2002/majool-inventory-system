@@ -188,12 +188,11 @@ function App() {
             {products
               .slice()
               .sort((a, b) =>
-                (a.master_sku_id.startsWith("MSKU-") ? a.master_sku_id.slice(5) : a.master_sku_id)
-                  .localeCompare(
-                    b.master_sku_id.startsWith("MSKU-") ? b.master_sku_id.slice(5) : b.master_sku_id,
-                    undefined,
-                    { numeric: true, sensitivity: "base" }
-                  )
+                (a.master_sku_id.startsWith("MSKU-") ? a.master_sku_id.slice(5) : a.master_sku_id).localeCompare(
+                  b.master_sku_id.startsWith("MSKU-") ? b.master_sku_id.slice(5) : b.master_sku_id,
+                  undefined,
+                  { numeric: true, sensitivity: "base" }
+                )
               )
               .map((group) => {
                 const totalQty = group.products.reduce((sum, p) => sum + p.serials.length, 0);
@@ -224,6 +223,13 @@ function App() {
                         .map((p) => {
                           const goodSerials = p.serials.filter((s) => !s.is_damaged);
                           const damagedSerials = p.serials.filter((s) => s.is_damaged);
+
+                          const sortedGoodSerials = goodSerials.sort(
+                            (a, b) => new Date(b.scanned_at) - new Date(a.scanned_at)
+                          );
+                          const displayLimit = 50;
+                          const showTruncated = sortedGoodSerials.length > displayLimit;
+                          const serialsToDisplay = sortedGoodSerials.slice(0, displayLimit);
 
                           const renderSerial = (s, idx, isDamaged = false) => (
                             <tr key={`${s.serial_number}-${idx}`} className="text-xs text-gray-600 bg-gray-50">
@@ -256,9 +262,18 @@ function App() {
                                 </td>
                               </tr>
 
-                              {goodSerials
-                                .sort((a, b) => new Date(b.scanned_at) - new Date(a.scanned_at))
-                                .map((s, idx) => renderSerial(s, idx, false))}
+                              {serialsToDisplay.map((s, idx) => renderSerial(s, idx, false))}
+
+                              {showTruncated && (
+                                <tr>
+                                  <td
+                                    colSpan={4}
+                                    className="border px-3 py-1 pl-10 text-sm text-gray-500 italic"
+                                  >
+                                    ...+{sortedGoodSerials.length - displayLimit} more
+                                  </td>
+                                </tr>
+                              )}
 
                               {damagedSerials.length > 0 && (
                                 <>
@@ -284,6 +299,7 @@ function App() {
           </tbody>
         </table>
       )}
+
 
 
  {/* Inventory Log Table */}
