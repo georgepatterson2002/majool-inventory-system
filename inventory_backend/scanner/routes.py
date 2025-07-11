@@ -53,6 +53,12 @@ class RepairRequest(BaseModel):
     unit_id: int
     new_product_id: Optional[int] = None
 
+class UpdateUnitMeta(BaseModel):
+    unit_id: int
+    sn_prefix: Optional[str]
+    po_number: Optional[str]
+    user_id: int
+
 @router.get("/ping")
 def scanner_ping():
     return {"scanner": "pong"}
@@ -719,3 +725,28 @@ def mark_repaired(req: RepairRequest):
     except Exception as e:
         print("ERROR in /mark-repaired:", str(e))
         raise HTTPException(status_code=500, detail="Failed to mark item as repaired")
+
+@router.post("/update-unit-meta")
+def update_unit_meta(data: UpdateUnitMeta):
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("""
+                    UPDATE inventory_units
+                    SET sn_prefix = :sn_prefix,
+                        po_number = :po_number
+                    WHERE unit_id = :uid
+                """),
+                {
+                    "sn_prefix": data.sn_prefix,
+                    "po_number": data.po_number,
+                    "uid": data.unit_id
+                }
+            )
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Unit not found")
+
+        return {"success": True}
+    except Exception as e:
+        print("ERROR in /update-unit-meta:", str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
