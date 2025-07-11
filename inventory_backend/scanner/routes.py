@@ -59,6 +59,11 @@ class UpdateUnitMeta(BaseModel):
     po_number: Optional[str]
     user_id: int
 
+class BulkUpdateRequest(BaseModel):
+    sn_prefix: Optional[str]
+    po_number: Optional[str]
+    user_id: int
+
 @router.get("/ping")
 def scanner_ping():
     return {"scanner": "pong"}
@@ -750,3 +755,37 @@ def update_unit_meta(data: UpdateUnitMeta):
     except Exception as e:
         print("ERROR in /update-unit-meta:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
+@router.post("/bulk-update-units")
+def bulk_update_units(req: BulkUpdateRequest):
+    if not req.sn_prefix and not req.po_number:
+        raise HTTPException(status_code=400, detail="At least one field must be provided.")
+
+    try:
+        with engine.begin() as conn:
+            fields = []
+            params = {}
+
+            if req.sn_prefix is not None:
+                fields.append("sn_prefix = :sn_prefix")
+                params["sn_prefix"] = req.sn_prefix
+            if req.po_number is not None:
+                fields.append("po_number = :po_number")
+                params["po_number"] = req.po_number
+
+            if not fields:
+                raise HTTPException(status_code=400, detail="Nothing to update.")
+
+            params["user_id"] = req.user_id
+
+            query = f"""
+                UPDATE inventory_units
+                SET {', '.join(fields)}
+                WHERE serial_number = 'NOSER'
+            """
+
+            result = conn.execute(text(query), params)
+            return {"success": True, "updated": result.rowcount}
+    except Exception as e:
+        print("Bulk update error:", e)
+        raise HTTPException(status_code=500, detail="Bulk update failed.")
