@@ -658,12 +658,13 @@ def get_damaged_units():
             ORDER BY iu.unit_id DESC
         """)
         with engine.connect() as conn:
-            rows = conn.execute(query).fetchall()
-            keys = rows[0].keys() if rows else []
-            return [dict(zip(keys, row)) for row in rows]
+            rows = conn.execute(query).mappings().all()
+            return list(rows)
     except Exception as e:
-        print("ERROR in /damaged-units:", str(e))
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to fetch damaged units")
+
 
 @router.post("/mark-repaired")
 def mark_repaired(req: RepairRequest):
