@@ -151,9 +151,11 @@ def sync_veeqo_orders_job():
                     remaining = total_ssds_needed - existing_ssd_count
                     if remaining > 0:
                         ssd_rows = conn.execute(text("""
-                            SELECT serial_number FROM inventory_units
-                            WHERE sold = FALSE AND ssd_id = 2
-                            ORDER BY received_at ASC
+                            SELECT iu.serial_number
+                            FROM inventory_units iu
+                            JOIN products p ON iu.product_id = p.product_id
+                            WHERE iu.sold = FALSE AND p.ssd_id = 2
+                            ORDER BY iu.serial_assigned_at ASC
                             LIMIT :qty
                         """), {"qty": remaining}).fetchall()
 
