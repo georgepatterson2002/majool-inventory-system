@@ -734,20 +734,27 @@ def mark_repaired(req: RepairRequest):
 @router.post("/update-unit-meta")
 def update_unit_meta(data: UpdateUnitMeta):
     try:
+        fields = []
+        params = {"uid": data.unit_id}
+
+        if data.sn_prefix is not None:
+            fields.append("sn_prefix = :sn_prefix")
+            params["sn_prefix"] = data.sn_prefix
+        if data.po_number is not None:
+            fields.append("po_number = :po_number")
+            params["po_number"] = data.po_number
+
+        if not fields:
+            raise HTTPException(status_code=400, detail="No fields to update.")
+
+        query = f"""
+            UPDATE inventory_units
+            SET {", ".join(fields)}
+            WHERE unit_id = :uid
+        """
+
         with engine.begin() as conn:
-            result = conn.execute(
-                text("""
-                    UPDATE inventory_units
-                    SET sn_prefix = :sn_prefix,
-                        po_number = :po_number
-                    WHERE unit_id = :uid
-                """),
-                {
-                    "sn_prefix": data.sn_prefix,
-                    "po_number": data.po_number,
-                    "uid": data.unit_id
-                }
-            )
+            result = conn.execute(text(query), params)
             if result.rowcount == 0:
                 raise HTTPException(status_code=404, detail="Unit not found")
 
@@ -755,6 +762,7 @@ def update_unit_meta(data: UpdateUnitMeta):
     except Exception as e:
         print("ERROR in /update-unit-meta:", str(e))
         raise HTTPException(status_code=500, detail="Internal Server Error")
+
 
 @router.post("/bulk-update-units")
 def bulk_update_units(req: BulkUpdateRequest):
