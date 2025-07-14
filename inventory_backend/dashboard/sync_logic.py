@@ -133,6 +133,17 @@ def sync_veeqo_orders_job():
             # HARD LIMIT: Only apply SSD logic for orders shipped on or after July 11, 2025
             ssd_cutoff = datetime(2025, 7, 11, 0, 0, 0, tzinfo=pytz.timezone("America/Los_Angeles"))
 
+            # Skip SSD logic if it's a return-based order
+            is_return_order = conn.execute(text("""
+                SELECT 1
+                FROM returns r
+                JOIN inventory_units iu ON r.original_unit_id = iu.unit_id
+                JOIN inventory_log il ON il.serial_number = iu.serial_number
+                WHERE il.order_id = :order_id
+                LIMIT 1
+            """), {"order_id": order_id}).fetchone()
+
+
             if shipped_time >= ssd_cutoff:
                 total_ssds_needed = sum(
                     item.get("quantity", 0)
@@ -180,6 +191,9 @@ def sync_veeqo_orders_job():
                             """), {"serial": ssd_serial})
 
                             print(f"[SSD] Marked 1TB SSD {ssd_serial} as sold for Order {order_id}")
+            elif is_return_order:
+                 print(f"[SSD] Skipping SSD logic for Order {order_id} — contains return serials")
+
 
             if serial_pointer < len(serials):
                 unassigned = serials[serial_pointer:]
