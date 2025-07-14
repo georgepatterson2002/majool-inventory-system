@@ -110,13 +110,25 @@ def get_po_summary(po_number: str):
             FROM inventory_units iu
             JOIN products p ON iu.product_id = p.product_id
             WHERE iu.po_number = :po
-            ORDER BY iu.serial_assigned_at DESC
+
+            UNION ALL
+
+            SELECT 
+                p.part_number AS sku,
+                p.product_name,
+                r.po_number,
+                r.serial_assigned_at::date AS received_date
+            FROM returns r
+            JOIN products p ON r.product_id = p.product_id
+            WHERE r.po_number = :po
+
+            ORDER BY received_date DESC
         """), {"po": po_number}).fetchall()
 
         summary = {}
         for row in result:
             key = (row.sku, row.product_name, row.received_date)
-            summary[key] = summary.get(key, 0) + 1  # count quantity per SKU per date
+            summary[key] = summary.get(key, 0) + 1
 
         return [
             {
