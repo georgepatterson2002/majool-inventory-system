@@ -760,8 +760,11 @@ def update_unit_meta(data: UpdateUnitMeta):
         params = {"uid": data.unit_id}
 
         if data.sn_prefix is not None:
-            fields.append("sn_prefix = :sn_prefix")
-            params["sn_prefix"] = data.sn_prefix
+            if data.sn_prefix == "":
+                fields.append("sn_prefix = NULL")
+            else:
+                fields.append("sn_prefix = :sn_prefix")
+                params["sn_prefix"] = data.sn_prefix
         if data.po_number is not None:
             fields.append("po_number = :po_number")
             params["po_number"] = data.po_number
