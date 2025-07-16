@@ -76,6 +76,9 @@ class ReconcileFromExisting(BaseModel):
 class DamageRequest(BaseModel):
     serial_number: str
 
+class ResolveReconciledRequest(BaseModel):
+    reconciled_id: int
+
 @router.get("/ping")
 def scanner_ping():
     return {"scanner": "pong"}
