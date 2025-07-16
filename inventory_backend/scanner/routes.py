@@ -64,6 +64,18 @@ class BulkUpdateRequest(BaseModel):
     po_number: Optional[str]
     user_id: int
 
+class NewReconciledItem(BaseModel):
+    product_id: int
+    serial_number: str
+    memo_number: str
+
+class ReconcileFromExisting(BaseModel):
+    serial_number: str
+    memo_number: str
+
+class DamageRequest(BaseModel):
+    serial_number: str
+
 @router.get("/ping")
 def scanner_ping():
     return {"scanner": "pong"}
@@ -797,3 +809,99 @@ def bulk_update_units(req: BulkUpdateRequest):
     except Exception as e:
         print("Bulk update error:", e)
         raise HTTPException(status_code=500, detail="Bulk update failed.")
+
+@router.get("/reconciled-items")
+def get_reconciled_items():
+    try:
+        query = text("""
+            SELECT ri.reconciled_id, ri.serial_number, p.part_number, ri.memo_number, ri.reconciled_at
+            FROM reconciled_items ri
+            JOIN products p ON ri.product_id = p.product_id
+            WHERE ri.resolved = FALSE
+            ORDER BY ri.reconciled_at DESC
+        """)
+        with engine.connect() as conn:
+            return conn.execute(query).mappings().all()
+    except Exception as e:
+        print("ERROR in /reconciled-items:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch reconciled items")
+
+@router.post("/reconciled-items")
+def create_reconciled_item(data: NewReconciledItem):
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO reconciled_items (product_id, serial_number, memo_number)
+                    VALUES (:product_id, :serial, :memo)
+                """),
+                {"product_id": data.product_id, "serial": data.serial_number, "memo": data.memo_number}
+            )
+        return {"success": True}
+    except Exception as e:
+        print("ERROR in POST /reconciled-items:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to add reconciled item")
+
+@router.post("/reconcile-from-existing")
+def reconcile_from_existing(data: ReconcileFromExisting):
+    try:
+        with engine.begin() as conn:
+            # Lookup product by serial
+            row = conn.execute(
+                text("""
+                    SELECT product_id FROM inventory_units
+                    WHERE serial_number = :sn
+                """), {"sn": data.serial_number}
+            ).fetchone()
+
+            if not row:
+                raise HTTPException(status_code=404, detail="Serial not found in inventory_units")
+
+            # Insert reconciled item
+            conn.execute(
+                text("""
+                    INSERT INTO reconciled_items (product_id, serial_number, memo_number)
+                    VALUES (:pid, :sn, :memo)
+                """),
+                {"pid": row.product_id, "sn": data.serial_number, "memo": data.memo_number}
+            )
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("ERROR in /reconcile-from-existing:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to reconcile from existing unit")
+
+@router.post("/reconciled-items/resolve")
+def resolve_reconciled_item(req: ResolveReconciledRequest):
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("UPDATE reconciled_items SET resolved = TRUE WHERE reconciled_id = :rid"),
+                {"rid": req.reconciled_id}
+            )
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Reconciled item not found")
+        return {"success": True}
+    except Exception as e:
+        print("ERROR resolving reconciled item:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to resolve reconciled item")
+
+@router.post("/mark-damaged")
+def mark_damaged_unit(req: DamageRequest):
+    try:
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("""
+                    UPDATE inventory_units
+                    SET is_damaged = TRUE
+                    WHERE serial_number = :sn
+                """),
+                {"sn": req.serial_number}
+            )
+            if result.rowcount == 0:
+                raise HTTPException(status_code=404, detail="Serial number not found.")
+        return {"success": True}
+    except Exception as e:
+        print("ERROR in /mark-damaged:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to mark unit as damaged")
