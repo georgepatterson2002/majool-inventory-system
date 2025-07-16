@@ -225,7 +225,8 @@ def add_delivery(
     quantity: int = Body(...),
     user_id: int = Body(...),
     po_number: str = Body(...),
-    sn_prefix: str = Body(default=None)
+    sn_prefix: str = Body(default=None),
+    is_damaged: bool = Body(default=False)  
 ):
     if quantity <= 0:
         raise HTTPException(status_code=400, detail="Quantity must be greater than zero.")
@@ -243,11 +244,17 @@ def add_delivery(
         with engine.begin() as conn:
             conn.execute(
                 text("""
-                    INSERT INTO inventory_units (product_id, serial_number, po_number, sn_prefix)
-                    SELECT :product_id, 'NOSER', :po_number, :sn_prefix
+                    INSERT INTO inventory_units (product_id, serial_number, po_number, sn_prefix, is_damaged)
+                    SELECT :product_id, 'NOSER', :po_number, :sn_prefix, :is_damaged
                     FROM generate_series(1, :qty)
                 """),
-                {"product_id": product_id, "qty": quantity, "po_number": po_number, "sn_prefix": sn_prefix}
+                {
+                    "product_id": product_id,
+                    "qty": quantity,
+                    "po_number": po_number,
+                    "sn_prefix": sn_prefix,
+                    "is_damaged": is_damaged 
+                }
             )
 
         return {"success": True}
