@@ -9,7 +9,8 @@ VEEQO_API_KEY = os.getenv("VEEQO_API_KEY")
 
 def sync_veeqo_orders_job():
     def fetch_orders():
-        now_local = datetime.now(pytz.timezone("America/Los_Angeles"))
+        la_tz = pytz.timezone("America/Los_Angeles")
+        now_local = datetime.now(la_tz)
         today = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
 
         url = "https://api.veeqo.com/orders"
@@ -31,14 +32,22 @@ def sync_veeqo_orders_job():
             response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
             raw_orders = response.json()
+
+            # Assuming raw_orders is a list of orders; adjust if API differs
             if not raw_orders:
                 break
 
-            filtered = [
-                o for o in raw_orders
-                if o.get("shipped_at") and
-                datetime.fromisoformat(o["shipped_at"].replace("Z", "+00:00")) >= today
-            ]
+            # Filter orders shipped today or later (convert shipped_at to LA tz)
+            filtered = []
+            for o in raw_orders:
+                shipped_at_str = o.get("shipped_at")
+                if not shipped_at_str:
+                    continue
+                shipped_utc = datetime.fromisoformat(shipped_at_str.replace("Z", "+00:00"))
+                shipped_la = shipped_utc.astimezone(la_tz)
+                if shipped_la >= today:
+                    filtered.append(o)
+
             all_orders.extend(filtered)
             page += 1
 
@@ -47,54 +56,98 @@ def sync_veeqo_orders_job():
     orders = fetch_orders()
     updated = []
 
+    la_tz = pytz.timezone("America/Los_Angeles")
+    ssd_cutoff = la_tz.localize(datetime(2025, 7, 11, 0, 0, 0))
+
     with engine.begin() as conn:
         for order in orders:
             order_id = order.get("number")
             shipped_time_str = order.get("shipped_at")
-            shipped_time = datetime.fromisoformat(shipped_time_str.replace("Z", "+00:00"))
+            shipped_utc = datetime.fromisoformat(shipped_time_str.replace("Z", "+00:00"))
+            shipped_time = shipped_utc.astimezone(la_tz)
+
             notes = order.get("employee_notes", [])
             serials = [n.get("text", "").strip() for n in notes if n.get("text")]
 
-            total_quantity = sum(
-                item.get("quantity", 0)
-                for allocation in order.get("allocations", [])
-                for item in allocation.get("line_items", [])
-            )
+            # --- 1. Calculate expected total serials accounting for enhanced SKUs ---
+            expected_serials_total = 0
+            sku_quantities = []  # For manual review insertion per SKU if needed
+            for allocation in order.get("allocations", []):
+                for item in allocation.get("line_items", []):
+                    sku = item.get("sellable", {}).get("sku_code", "").lower()
+                    qty = item.get("quantity", 0)
+                    multiplier = 2 if any(k in sku for k in ["+512gb", "--512gb"]) else 1
+                    expected = qty * multiplier
+                    expected_serials_total += expected
+                    sku_quantities.append((sku, expected))
 
-            if len(serials) != total_quantity:
+            # --- 2. Check total serial count matches expected ---
+            if len(serials) != expected_serials_total:
+                print(f"[MANUAL REVIEW] Serial count mismatch for Order {order_id}: expected {expected_serials_total}, got {len(serials)}")
+                # Insert manual review per SKU
                 inserted = set()
-                for allocation in order.get("allocations", []):
-                    for alloc_item in allocation.get("line_items", []):
-                        sku = alloc_item.get("sellable", {}).get("sku_code")
-                        if sku and (order_id, sku) not in inserted:
-                            inserted.add((order_id, sku))
-                            existing = conn.execute(text("""
-                                SELECT resolved FROM manual_review
-                                WHERE order_id = :order_id AND sku = :sku
-                            """), {"order_id": order_id, "sku": sku}).fetchone()
+                for sku, _ in sku_quantities:
+                    if (order_id, sku) in inserted:
+                        continue
+                    inserted.add((order_id, sku))
+                    existing = conn.execute(text("""
+                        SELECT resolved FROM manual_review
+                        WHERE order_id = :order_id AND sku = :sku
+                    """), {"order_id": order_id, "sku": sku}).fetchone()
+                    if not existing:
+                        conn.execute(text("""
+                            INSERT INTO manual_review (order_id, sku, created_at)
+                            VALUES (:order_id, :sku, :created_at)
+                        """), {"order_id": order_id, "sku": sku, "created_at": shipped_time})
+                continue  # Skip rest of processing for this order
 
-                            if not existing:
-                                conn.execute(text("""
-                                    INSERT INTO manual_review (order_id, sku, created_at)
-                                    VALUES (:order_id, :sku, :created_at)
-                                """), {"order_id": order_id, "sku": sku, "created_at": shipped_time})
-                continue
+            # --- 3. Validate all serials exist and sold = False ---
+            all_valid = True
+            for s in serials:
+                res = conn.execute(text("""
+                    SELECT sold FROM inventory_units WHERE serial_number = :serial
+                """), {"serial": s}).fetchone()
+                if not res:
+                    print(f"[MANUAL REVIEW] Serial {s} not found in inventory_units for Order {order_id}")
+                    all_valid = False
+                    break
+                if res.sold:
+                    print(f"[MANUAL REVIEW] Serial {s} already sold for Order {order_id}")
+                    all_valid = False
+                    break
 
+            if not all_valid:
+                # Insert manual review for all SKUs in order
+                inserted = set()
+                for sku, _ in sku_quantities:
+                    if (order_id, sku) in inserted:
+                        continue
+                    inserted.add((order_id, sku))
+                    existing = conn.execute(text("""
+                        SELECT resolved FROM manual_review
+                        WHERE order_id = :order_id AND sku = :sku
+                    """), {"order_id": order_id, "sku": sku}).fetchone()
+                    if not existing:
+                        conn.execute(text("""
+                            INSERT INTO manual_review (order_id, sku, created_at)
+                            VALUES (:order_id, :sku, :created_at)
+                        """), {"order_id": order_id, "sku": sku, "created_at": shipped_time})
+                continue  # Skip processing this order
+
+            # --- 4. All valid: assign serials to SKUs and insert logs ---
             serial_pointer = 0
             for allocation in order.get("allocations", []):
-                for alloc_item in allocation.get("line_items", []):
-                    sku = alloc_item.get("sellable", {}).get("sku_code")
-                    quantity = alloc_item.get("quantity", 0)
+                for item in allocation.get("line_items", []):
+                    sku = item.get("sellable", {}).get("sku_code")
+                    quantity = item.get("quantity", 0)
+                    sku_lower = (sku or "").lower()
+                    is_512gb_enhanced = any(k in sku_lower for k in ["+512gb", "--512gb"])
+                    expected_serials = quantity * (2 if is_512gb_enhanced else 1)
 
-                    for _ in range(quantity):
-                        if serial_pointer >= len(serials):
-                            print(f"[WARNING] Serial list exhausted early for SKU: {sku} in Order: {order_id}")
-                            continue
-
+                    for _ in range(expected_serials):
                         serial = serials[serial_pointer]
                         serial_pointer += 1
 
-                        # Just insert new record, no need to check or delete existing ones
                         conn.execute(text("""
                             INSERT INTO inventory_log (sku, serial_number, order_id, event_time)
                             VALUES (:sku, :serial, :order_id, :event_time)
@@ -106,19 +159,13 @@ def sync_veeqo_orders_job():
                             "event_time": shipped_time
                         })
 
+                        conn.execute(text("""
+                            UPDATE inventory_units SET sold = TRUE WHERE serial_number = :serial
+                        """), {"serial": serial})
 
                         updated.append({"serial": serial, "order_id": order_id})
 
-                        conn.execute(text("""
-                            UPDATE inventory_units
-                            SET sold = TRUE
-                            WHERE serial_number = :serial;
-                        """), {"serial": serial})
-
-            # HARD LIMIT: Only apply SSD logic for orders shipped on or after July 11, 2025
-            ssd_cutoff = datetime(2025, 7, 11, 0, 0, 0, tzinfo=pytz.timezone("America/Los_Angeles"))
-
-            # Skip SSD logic if it's a return-based order
+            # --- 5. SSD logic for orders shipped on/after cutoff and not return orders ---
             is_return_order = conn.execute(text("""
                 SELECT 1
                 FROM returns r
@@ -128,8 +175,7 @@ def sync_veeqo_orders_job():
                 LIMIT 1
             """), {"order_id": order_id}).fetchone()
 
-
-            if shipped_time >= ssd_cutoff:
+            if shipped_time >= ssd_cutoff and not is_return_order:
                 total_ssds_needed = sum(
                     item.get("quantity", 0)
                     for allocation in order.get("allocations", [])
@@ -159,8 +205,8 @@ def sync_veeqo_orders_job():
                         if len(ssd_rows) < remaining:
                             print(f"[WARNING] Only found {len(ssd_rows)} available SSDs for Order {order_id}, needed {remaining}")
 
-                        for i in range(min(remaining, len(ssd_rows))):
-                            ssd_serial = ssd_rows[i].serial_number
+                        for ssd_row in ssd_rows:
+                            ssd_serial = ssd_row.serial_number
 
                             conn.execute(text("""
                                 INSERT INTO inventory_log (sku, serial_number, order_id, event_time)
@@ -176,10 +222,11 @@ def sync_veeqo_orders_job():
                             """), {"serial": ssd_serial})
 
                             print(f"[SSD] Marked 1TB SSD {ssd_serial} as sold for Order {order_id}")
+
             elif is_return_order:
-                 print(f"[SSD] Skipping SSD logic for Order {order_id} — contains return serials")
+                print(f"[SSD] Skipping SSD logic for Order {order_id} — contains return serials")
 
-
+            # --- 6. Report unused serials if any ---
             if serial_pointer < len(serials):
                 unassigned = serials[serial_pointer:]
                 print(f"[INFO] Unused serials for order {order_id}: {unassigned}")
