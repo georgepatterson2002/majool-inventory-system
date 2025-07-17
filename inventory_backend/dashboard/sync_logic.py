@@ -94,33 +94,18 @@ def sync_veeqo_orders_job():
                         serial = serials[serial_pointer]
                         serial_pointer += 1
 
-                        existing_log = conn.execute(text("""
-                            SELECT * FROM inventory_log WHERE serial_number = :serial
-                        """), {"serial": serial}).fetchone()
-
-                        if existing_log:
-                            was_returned = conn.execute(text("""
-                                SELECT * FROM returns WHERE serial_number = :serial
-                            """), {"serial": serial}).fetchone()
-
-                            if was_returned:
-                                conn.execute(text("""
-                                    DELETE FROM inventory_log WHERE serial_number = :serial
-                                """), {"serial": serial})
-                                print(f"[INFO] Serial {serial} reused after return for Order {order_id}")
-                            else:
-                                print(f"[WARNING] Serial {serial} already in use and not returned — skipping.")
-                                continue
-
+                        # Just insert new record, no need to check or delete existing ones
                         conn.execute(text("""
                             INSERT INTO inventory_log (sku, serial_number, order_id, event_time)
                             VALUES (:sku, :serial, :order_id, :event_time)
+                            ON CONFLICT (serial_number, order_id) DO NOTHING
                         """), {
                             "sku": sku,
                             "serial": serial,
                             "order_id": order_id,
                             "event_time": shipped_time
                         })
+
 
                         updated.append({"serial": serial, "order_id": order_id})
 
