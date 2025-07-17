@@ -134,7 +134,7 @@ def sync_veeqo_orders_job():
                     item.get("quantity", 0)
                     for allocation in order.get("allocations", [])
                     for item in allocation.get("line_items", [])
-                    if "+1tb" in (item.get("sellable", {}).get("sku_code") or "").lower()
+                    if any(keyword in (item.get("sellable", {}).get("sku_code") or "").lower() for keyword in ["+1tb", "--1tb"])
                 )
 
                 if total_ssds_needed > 0:
