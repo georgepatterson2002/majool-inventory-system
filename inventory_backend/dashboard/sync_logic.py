@@ -83,7 +83,7 @@ def sync_veeqo_orders_job():
 
             # --- 2. Check total serial count matches expected ---
             if len(serials) != expected_serials_total:
-                print(f"[MANUAL REVIEW] Serial count mismatch for Order {order_id}: expected {expected_serials_total}, got {len(serials)}")
+                print(f"[MANUAL REVIEW] Serial count mismatch — Order {order_id}, SKU totals: {sku_quantities}, expected serials: {expected_serials_total}, received: {len(serials)}")
                 # Insert manual review per SKU
                 inserted = set()
                 for sku, _ in sku_quantities:
