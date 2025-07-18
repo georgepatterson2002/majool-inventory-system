@@ -62,6 +62,15 @@ def sync_veeqo_orders_job():
     with engine.begin() as conn:
         for order in orders:
             order_id = order.get("number")
+
+            # Add this check to skip already processed orders:
+            existing_order = conn.execute(text("""
+                SELECT 1 FROM inventory_log WHERE order_id = :order_id LIMIT 1
+            """), {"order_id": order_id}).fetchone()
+            if existing_order:
+                print(f"[INFO] Order {order_id} already processed — skipping")
+                continue
+                
             shipped_time_str = order.get("shipped_at")
             shipped_utc = datetime.fromisoformat(shipped_time_str.replace("Z", "+00:00"))
             shipped_time = shipped_utc.astimezone(la_tz)
