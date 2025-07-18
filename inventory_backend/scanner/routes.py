@@ -487,9 +487,6 @@ def handle_return_scan(
             if not original:
                 raise HTTPException(status_code=404, detail="Serial number not found.")
 
-            if not original.sold:
-                raise HTTPException(status_code=400, detail="Serial number is already in stock.")
-
             # Step 2: Verify master SKU match
             placeholder = conn.execute(text("""
                 SELECT iu.unit_id, p.product_id, m.master_sku_id
