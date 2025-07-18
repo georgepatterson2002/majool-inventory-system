@@ -79,6 +79,11 @@ class DamageRequest(BaseModel):
 class ResolveReconciledRequest(BaseModel):
     reconciled_id: int
 
+class LogUntrackedSaleRequest(BaseModel):
+    product_id: int
+    order_id: str
+    quantity: int
+
 @router.get("/ping")
 def scanner_ping():
     return {"scanner": "pong"}
@@ -915,3 +920,23 @@ def mark_damaged_unit(req: DamageRequest):
     except Exception as e:
         print("ERROR in /mark-damaged:", str(e))
         raise HTTPException(status_code=500, detail="Failed to mark unit as damaged")
+
+
+@router.post("/log-untracked-sale")
+def log_untracked_sale(req: LogUntrackedSaleRequest):
+    if req.quantity <= 0:
+        raise HTTPException(status_code=400, detail="Quantity must be greater than zero.")
+
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO untracked_serial_sales (product_id, order_id, quantity)
+                    VALUES (:pid, :oid, :qty)
+                """),
+                {"pid": req.product_id, "oid": req.order_id, "qty": req.quantity}
+            )
+        return {"success": True}
+    except Exception as e:
+        print("ERROR in /log-untracked-sale:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to log untracked serial sale")
