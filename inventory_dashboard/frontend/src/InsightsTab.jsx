@@ -73,12 +73,10 @@ function InsightsTab() {
                   onClick={() => toggleRow(idx)}
                   className="cursor-pointer hover:bg-gray-50"
                 >
-                  <td className="border px-3 py-2">{row.sku}</td>
+                  <td className="border px-3 py-2 font-bold">{row.sku}</td>
                   <td className="border px-3 py-2">{row.product_name}</td>
                   <td className="border px-3 py-2">{row.received_date}</td>
-                  <td className="border px-3 py-2">
-                    {row.serials.length} serial{row.serials.length !== 1 ? "s" : ""}
-                  </td>
+                  <td className="border px-3 py-2">{row.serial_count}</td>
                 </tr>
                 {expandedRows[idx] && (
                   <tr>
