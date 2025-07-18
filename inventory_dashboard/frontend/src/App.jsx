@@ -40,33 +40,14 @@ function App() {
         grouped[masterId] = {
           master_sku_id: masterId,
           description: row.description,
-          products: {}
+          quantity: 0
         };
       }
 
-      const existing = grouped[masterId].products[row.product_id] || {
-        product_id: row.product_id,
-        product_name: row.product_name,
-        part_number: row.part_number,
-        serials: []
-      };
-
-      if (row.serial_number) {
-        existing.serials.push({
-          serial_number: row.serial_number,
-          po_number: row.po_number,
-          scanned_at: row.serial_assigned_at,
-          is_damaged: row.is_damaged || false  // fallback to false if missing
-        });
-      }
-
-      grouped[masterId].products[row.product_id] = existing;
+      grouped[masterId].quantity += Number(row.quantity || 0);
     }
 
-    return Object.values(grouped).map((group) => ({
-      ...group,
-      products: Object.values(group.products)
-    }));
+    return Object.values(grouped);
   };
 
   const fetchData = async () => {
@@ -196,10 +177,8 @@ function App() {
               )
               .map((row) => (
                 <tr key={row.product_id} className="bg-white hover:bg-gray-100">
-                  <td className="border px-3 py-2">
-                    {row.master_sku_id.startsWith("MSKU-")
-                      ? row.master_sku_id.slice(5)
-                      : row.master_sku_id}
+                  <td className="border px-3 py-2 font-bold">
+                    {row.master_sku_id}
                   </td>
                   <td className="border px-3 py-2">{row.description}</td>
                   <td className="border px-3 py-2">{row.quantity}</td>
