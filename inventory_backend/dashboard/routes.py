@@ -43,17 +43,20 @@ def get_grouped_products():
                 p.product_name,
                 p.part_number,
                 p.brand,
-                iu.serial_number,
-                iu.po_number,
-                iu.serial_assigned_at,
-                iu.is_damaged
+                COUNT(iu.unit_id) AS quantity
             FROM products p
             JOIN master_skus m ON p.master_sku_id = m.master_sku_id
-            LEFT JOIN inventory_units iu ON p.product_id = iu.product_id AND iu.sold = FALSE
+            LEFT JOIN inventory_units iu 
+                ON p.product_id = iu.product_id 
+                AND iu.sold = FALSE
+                AND iu.serial_number != 'NOSER'
+            WHERE iu.unit_id IS NOT NULL
+            GROUP BY m.master_sku_id, m.description, p.product_id, p.product_name, p.part_number, p.brand
         """))
         rows = result.fetchall()
         keys = result.keys()
         return [dict(zip(keys, row)) for row in rows]
+
 
 
 @router.get("/manual-check")
@@ -98,14 +101,15 @@ def sync_veeqo_orders():
         "count": len(updated)
     }
 
-@router.get("/insights/po-summary")
-def get_po_summary(po_number: str):
+@router.get("/insights/po-details")
+def get_po_details(po_number: str):
     with engine.connect() as conn:
         result = conn.execute(text("""
             SELECT 
                 p.part_number AS sku,
                 p.product_name,
                 iu.po_number,
+                iu.serial_number,
                 iu.serial_assigned_at::date AS received_date
             FROM inventory_units iu
             JOIN products p ON iu.product_id = p.product_id
@@ -117,25 +121,28 @@ def get_po_summary(po_number: str):
                 p.part_number AS sku,
                 p.product_name,
                 r.po_number,
+                r.serial_number,
                 r.serial_assigned_at::date AS received_date
             FROM returns r
             JOIN products p ON r.product_id = p.product_id
             WHERE r.po_number = :po
 
-            ORDER BY received_date DESC
+            ORDER BY sku, received_date, serial_number
         """), {"po": po_number}).fetchall()
 
-        summary = {}
+        data = {}
         for row in result:
             key = (row.sku, row.product_name, row.received_date)
-            summary[key] = summary.get(key, 0) + 1
+            if key not in data:
+                data[key] = []
+            data[key].append(row.serial_number)
 
         return [
             {
                 "sku": sku,
                 "product_name": name,
                 "received_date": str(date),
-                "quantity": qty
+                "serials": serials
             }
-            for (sku, name, date), qty in summary.items()
+            for (sku, name, date), serials in data.items()
         ]

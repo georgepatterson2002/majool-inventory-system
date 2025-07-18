@@ -3,28 +3,34 @@ import React, { useState } from "react";
 function InsightsTab() {
   const [poNumber, setPoNumber] = useState("");
   const [results, setResults] = useState([]);
+  const [expandedRows, setExpandedRows] = useState({});
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
 
   const handleSearch = async () => {
     if (!poNumber.trim()) return;
-
-    setHasSearched(true); // ← Track that the user submitted a search
-    setLoading(true);
-
+    setHasSearched(true);
     setLoading(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_HOST}/dashboard/insights/po-summary?po_number=${encodeURIComponent(poNumber)}`);
-
-
+      const res = await fetch(
+        `${import.meta.env.VITE_API_HOST}/dashboard/insights/po-details?po_number=${encodeURIComponent(poNumber)}`
+      );
       const data = await res.json();
       setResults(data);
+      setExpandedRows({}); // reset expansion
     } catch (err) {
-      console.error("Failed to load PO summary", err);
+      console.error("Failed to load PO details", err);
       setResults([]);
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleRow = (idx) => {
+    setExpandedRows((prev) => ({
+      ...prev,
+      [idx]: !prev[idx]
+    }));
   };
 
   return (
@@ -49,32 +55,46 @@ function InsightsTab() {
       {loading ? (
         <p className="text-gray-600">Loading...</p>
       ) : results.length === 0 && hasSearched ? (
-            <p className="text-red-500">No results found for PO: {poNumber}</p>
-          ) : (
-        results.length > 0 && (
-          <table className="w-full border border-gray-300">
-            <thead className="bg-gray-100 text-left">
-              <tr>
-                <th className="border px-3 py-2">SKU</th>
-                <th className="border px-3 py-2">Product</th>
-                <th className="border px-3 py-2">Date Received</th>
-                <th className="border px-3 py-2">Quantity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {results
-                .sort((a, b) => new Date(b.received_date) - new Date(a.received_date))
-                .map((row, idx) => (
-                  <tr key={idx}>
-                    <td className="border px-3 py-2">{row.sku}</td>
-                    <td className="border px-3 py-2">{row.product_name}</td>
-                    <td className="border px-3 py-2">{row.received_date}</td>
-                    <td className="border px-3 py-2">{row.quantity}</td>
+        <p className="text-red-500">No results found for PO: {poNumber}</p>
+      ) : (
+        <table className="w-full border border-gray-300">
+          <thead className="bg-gray-100 text-left">
+            <tr>
+              <th className="border px-3 py-2">SKU</th>
+              <th className="border px-3 py-2">Product</th>
+              <th className="border px-3 py-2">Date Received</th>
+              <th className="border px-3 py-2">Serials</th>
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((row, idx) => (
+              <React.Fragment key={idx}>
+                <tr
+                  onClick={() => toggleRow(idx)}
+                  className="cursor-pointer hover:bg-gray-50"
+                >
+                  <td className="border px-3 py-2">{row.sku}</td>
+                  <td className="border px-3 py-2">{row.product_name}</td>
+                  <td className="border px-3 py-2">{row.received_date}</td>
+                  <td className="border px-3 py-2">
+                    {row.serials.length} serial{row.serials.length !== 1 ? "s" : ""}
+                  </td>
+                </tr>
+                {expandedRows[idx] && (
+                  <tr>
+                    <td colSpan="4" className="bg-gray-50 px-4 py-2">
+                      <ul className="list-disc list-inside text-sm text-gray-700">
+                        {row.serials.map((sn, i) => (
+                          <li key={i}>{sn}</li>
+                        ))}
+                      </ul>
+                    </td>
                   </tr>
-              ))}
-            </tbody>
-          </table>
-        )
+                )}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );

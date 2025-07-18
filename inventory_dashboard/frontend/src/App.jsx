@@ -194,111 +194,21 @@ function App() {
                   { numeric: true, sensitivity: "base" }
                 )
               )
-              .map((group) => {
-                const totalQty = group.products.reduce((sum, p) => sum + p.serials.length, 0);
-                if (totalQty === 0) return null;
-
-                const isOpen = expandedSkus.has(group.master_sku_id);
-                const toggle = () => {
-                  const next = new Set(expandedSkus);
-                  isOpen ? next.delete(group.master_sku_id) : next.add(group.master_sku_id);
-                  setExpandedSkus(next);
-                };
-
-                return (
-                  <React.Fragment key={group.master_sku_id}>
-                    <tr onClick={toggle} className="cursor-pointer hover:bg-gray-100 font-semibold">
-                      <td className="border px-3 py-2">
-                        {group.master_sku_id.startsWith("MSKU-")
-                          ? group.master_sku_id.slice(5)
-                          : group.master_sku_id}
-                      </td>
-                      <td className="border px-3 py-2">{group.description}</td>
-                      <td className="border px-3 py-2">{totalQty}</td>
-                    </tr>
-
-                    {isOpen &&
-                      group.products
-                        .filter((p) => p.serials.length > 0)
-                        .map((p) => {
-                          const goodSerials = p.serials.filter((s) => !s.is_damaged);
-                          const damagedSerials = p.serials.filter((s) => s.is_damaged);
-
-                          const sortedGoodSerials = goodSerials.sort(
-                            (a, b) => new Date(b.scanned_at) - new Date(a.scanned_at)
-                          );
-                          const displayLimit = 50;
-                          const showTruncated = sortedGoodSerials.length > displayLimit;
-                          const serialsToDisplay = sortedGoodSerials.slice(0, displayLimit);
-
-                          const renderSerial = (s, idx, isDamaged = false) => (
-                            <tr key={`${s.serial_number}-${idx}`} className="text-xs text-gray-600 bg-gray-50">
-                              <td colSpan={4} className="border px-3 py-1 pl-10">
-                                <div className="grid grid-cols-3 gap-4 w-full text-sm">
-                                  <div>
-                                    <span className="font-semibold text-gray-700">Serial:</span>{" "}
-                                    {s.serial_number}{" "}
-                                    {isDamaged && (
-                                      <span className="text-red-600 font-semibold">(Damaged)</span>
-                                    )}
-                                  </div>
-                                  <div>
-                                    <span className="font-semibold text-gray-700">PO:</span> {s.po_number}
-                                  </div>
-                                  <div>
-                                    <span className="font-semibold text-gray-700">Scanned:</span>{" "}
-                                    {new Date(s.scanned_at).toLocaleString()}
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-
-                          return (
-                            <React.Fragment key={p.product_id}>
-                              <tr className="text-sm bg-white">
-                                <td colSpan={4} className="border px-3 py-2 pl-6 text-gray-700">
-                                  SKU: {p.part_number}
-                                </td>
-                              </tr>
-
-                              {serialsToDisplay.map((s, idx) => renderSerial(s, idx, false))}
-
-                              {showTruncated && (
-                                <tr>
-                                  <td
-                                    colSpan={4}
-                                    className="border px-3 py-1 pl-10 text-sm text-gray-500 italic"
-                                  >
-                                    ...+{sortedGoodSerials.length - displayLimit} more
-                                  </td>
-                                </tr>
-                              )}
-
-                              {damagedSerials.length > 0 && (
-                                <>
-                                  <tr className="bg-red-50">
-                                    <td
-                                      colSpan={4}
-                                      className="px-3 py-1 text-xs text-red-700 font-semibold pl-10"
-                                    >
-                                      Damaged Items:
-                                    </td>
-                                  </tr>
-                                  {damagedSerials
-                                    .sort((a, b) => new Date(b.scanned_at) - new Date(a.scanned_at))
-                                    .map((s, idx) => renderSerial(s, idx, true))}
-                                </>
-                              )}
-                            </React.Fragment>
-                          );
-                        })}
-                  </React.Fragment>
-                );
-              })}
+              .map((row) => (
+                <tr key={row.product_id} className="bg-white hover:bg-gray-100">
+                  <td className="border px-3 py-2">
+                    {row.master_sku_id.startsWith("MSKU-")
+                      ? row.master_sku_id.slice(5)
+                      : row.master_sku_id}
+                  </td>
+                  <td className="border px-3 py-2">{row.description}</td>
+                  <td className="border px-3 py-2">{row.quantity}</td>
+                </tr>
+              ))}
           </tbody>
         </table>
       )}
+
 
 
 
