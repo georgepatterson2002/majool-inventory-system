@@ -76,13 +76,13 @@ function InsightsTab() {
                   <td className="border px-3 py-2 font-bold">{row.sku}</td>
                   <td className="border px-3 py-2">{row.product_name}</td>
                   <td className="border px-3 py-2">{row.received_date}</td>
-                  <td className="border px-3 py-2">{row.serial_count}</td>
+                  <td className="border px-3 py-2">{row.serial_count ?? (row.serials?.length ?? 0)}</td>
                 </tr>
                 {expandedRows[idx] && (
                   <tr>
                     <td colSpan="4" className="bg-gray-50 px-4 py-2">
                       <ul className="list-disc list-inside text-sm text-gray-700">
-                        {row.serials.map((sn, i) => (
+                        {(row.serials ?? []).map((sn, i) => (
                           <li key={i}>{sn}</li>
                         ))}
                       </ul>
