@@ -178,7 +178,7 @@ function App() {
               .map((row) => (
                 <tr key={row.product_id} className="bg-white hover:bg-gray-100">
                   <td className="border px-3 py-2 font-bold">
-                    {row.master_sku_id}
+                    {row.master_sku_id.replace(/^MSKU-/, "")}
                   </td>
                   <td className="border px-3 py-2">{row.description}</td>
                   <td className="border px-3 py-2">{row.quantity}</td>
