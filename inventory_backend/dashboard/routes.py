@@ -44,26 +44,32 @@ def get_grouped_products():
                 p.part_number,
                 p.brand,
                 GREATEST(
-                    COUNT(iu.unit_id) - COALESCE(SUM(uss.quantity), 0),
+                    (
+                        SELECT COUNT(*) 
+                        FROM inventory_units iu
+                        WHERE iu.product_id = p.product_id
+                          AND iu.sold = FALSE
+                          AND iu.serial_number != 'NOSER'
+                    )
+                    -
+                    COALESCE(
+                        (
+                            SELECT SUM(quantity)
+                            FROM untracked_serial_sales uss
+                            WHERE uss.product_id = p.product_id
+                        ), 
+                        0
+                    ),
                     0
                 ) AS quantity
             FROM products p
             JOIN master_skus m ON p.master_sku_id = m.master_sku_id
-            LEFT JOIN inventory_units iu 
-                ON p.product_id = iu.product_id 
-                AND iu.sold = FALSE
-                AND iu.serial_number != 'NOSER'
-            LEFT JOIN (
-                SELECT product_id, SUM(quantity) AS quantity
-                FROM untracked_serial_sales
-                GROUP BY product_id
-            ) uss ON p.product_id = uss.product_id
-            WHERE iu.unit_id IS NOT NULL
-            GROUP BY m.master_sku_id, m.description, p.product_id, p.product_name, p.part_number, p.brand, uss.quantity
+            ORDER BY m.master_sku_id, p.product_id;
         """))
         rows = result.fetchall()
         keys = result.keys()
         return [dict(zip(keys, row)) for row in rows]
+
 
 
 
