@@ -36,35 +36,38 @@ def get_products():
 def get_grouped_products():
     with engine.connect() as conn:
         result = conn.execute(text("""
-            SELECT 
-                m.master_sku_id,
-                m.description,
-                p.product_id,
-                p.product_name,
-                p.part_number,
-                p.brand,
-                GREATEST(
+            WITH base AS (
+                SELECT 
+                    m.master_sku_id,
+                    m.description,
+                    p.product_id,
+                    p.product_name,
+                    p.part_number,
+                    p.brand,
                     (
-                        SELECT COUNT(*) 
-                        FROM inventory_units iu
-                        WHERE iu.product_id = p.product_id
-                          AND iu.sold = FALSE
-                          AND iu.serial_number != 'NOSER'
-                    )
-                    -
-                    COALESCE(
                         (
-                            SELECT SUM(quantity)
-                            FROM untracked_serial_sales uss
-                            WHERE uss.product_id = p.product_id
-                        ), 
-                        0
-                    ),
-                    0
-                ) AS quantity
-            FROM products p
-            JOIN master_skus m ON p.master_sku_id = m.master_sku_id
-            ORDER BY m.master_sku_id, p.product_id;
+                            SELECT COUNT(*) 
+                            FROM inventory_units iu
+                            WHERE iu.product_id = p.product_id
+                            AND iu.sold = FALSE
+                            AND iu.serial_number != 'NOSER'
+                        )
+                        -
+                        COALESCE(
+                            (
+                                SELECT SUM(quantity)
+                                FROM untracked_serial_sales uss
+                                WHERE uss.product_id = p.product_id
+                            ), 
+                            0
+                        )
+                    ) AS quantity
+                FROM products p
+                JOIN master_skus m ON p.master_sku_id = m.master_sku_id
+            )
+            SELECT * FROM base
+            WHERE quantity > 0
+            ORDER BY master_sku_id, product_id;
         """))
         rows = result.fetchall()
         keys = result.keys()
