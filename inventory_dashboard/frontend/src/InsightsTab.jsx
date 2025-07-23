@@ -17,7 +17,6 @@ function InsightsTab() {
     setUnitResult(null);
     setError("");
     try {
-      // First try PO search
       const poRes = await fetch(
         `${import.meta.env.VITE_API_HOST}/dashboard/insights/po-details?po_number=${encodeURIComponent(
           lookupValue
@@ -30,7 +29,6 @@ function InsightsTab() {
         return;
       }
 
-      // If not a PO, try serial
       const snRes = await fetch(
         `${import.meta.env.VITE_API_HOST}/dashboard/insights/unit-details?serial_number=${encodeURIComponent(
           lookupValue
@@ -86,6 +84,7 @@ function InsightsTab() {
               <th className="border px-3 py-2">Date Received</th>
               <th className="border px-3 py-2">Sold</th>
               <th className="border px-3 py-2">Damaged</th>
+              <th className="border px-3 py-2">PO</th>
             </tr>
           </thead>
           <tbody>
@@ -95,6 +94,7 @@ function InsightsTab() {
               <td className="border px-3 py-2">{unitResult.received_date}</td>
               <td className="border px-3 py-2">{unitResult.sold ? "Yes" : "No"}</td>
               <td className="border px-3 py-2">{unitResult.is_damaged ? "Yes" : "No"}</td>
+              <td className="border px-3 py-2">{unitResult.po_number}</td>
             </tr>
           </tbody>
         </table>

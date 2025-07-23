@@ -173,7 +173,8 @@ def get_unit_details(serial_number: str):
                 p.product_name,
                 iu.serial_assigned_at::date AS received_date,
                 iu.sold,
-                iu.is_damaged
+                iu.is_damaged,
+                iu.po_number
             FROM inventory_units iu
             JOIN products p ON iu.product_id = p.product_id
             WHERE iu.serial_number = :sn
@@ -187,6 +188,6 @@ def get_unit_details(serial_number: str):
             "product_name": row.product_name,
             "received_date": str(row.received_date),
             "sold": row.sold,
-            "is_damaged": row.is_damaged
+            "is_damaged": row.is_damaged,
+            "po_number": row.po_number  # <-- add this line
         }
-
