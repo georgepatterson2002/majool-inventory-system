@@ -1,26 +1,47 @@
 import React, { useState } from "react";
 
 function InsightsTab() {
-  const [poNumber, setPoNumber] = useState("");
-  const [results, setResults] = useState([]);
+  const [lookupValue, setLookupValue] = useState("");
+  const [poResults, setPoResults] = useState([]);
+  const [unitResult, setUnitResult] = useState(null);
   const [expandedRows, setExpandedRows] = useState({});
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSearch = async () => {
-    if (!poNumber.trim()) return;
+    if (!lookupValue.trim()) return;
     setHasSearched(true);
     setLoading(true);
+    setPoResults([]);
+    setUnitResult(null);
+    setError("");
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_HOST}/dashboard/insights/po-details?po_number=${encodeURIComponent(poNumber)}`
+      // First try PO search
+      const poRes = await fetch(
+        `${import.meta.env.VITE_API_HOST}/dashboard/insights/po-details?po_number=${encodeURIComponent(
+          lookupValue
+        )}`
       );
-      const data = await res.json();
-      setResults(data);
-      setExpandedRows({}); // reset expansion
+      const poData = await poRes.json();
+
+      if (poData.length > 0) {
+        setPoResults(poData);
+        return;
+      }
+
+      // If not a PO, try serial
+      const snRes = await fetch(
+        `${import.meta.env.VITE_API_HOST}/dashboard/insights/unit-details?serial_number=${encodeURIComponent(
+          lookupValue
+        )}`
+      );
+
+      if (!snRes.ok) throw new Error("Not found");
+      const snData = await snRes.json();
+      setUnitResult(snData);
     } catch (err) {
-      console.error("Failed to load PO details", err);
-      setResults([]);
+      setError(`No results found for: ${lookupValue}`);
     } finally {
       setLoading(false);
     }
@@ -35,14 +56,14 @@ function InsightsTab() {
 
   return (
     <div className="p-4">
-      <h2 className="text-xl font-bold mb-4">PO Lookup</h2>
+      <h2 className="text-xl font-bold mb-4">Lookup</h2>
 
       <div className="flex items-center gap-2 mb-4">
         <input
-          value={poNumber}
-          onChange={(e) => setPoNumber(e.target.value)}
-          placeholder="Enter PO number..."
-          className="border px-3 py-2 rounded w-64"
+          value={lookupValue}
+          onChange={(e) => setLookupValue(e.target.value)}
+          placeholder="Enter PO number or serial number..."
+          className="border px-3 py-2 rounded w-80"
         />
         <button
           onClick={handleSearch}
@@ -54,9 +75,30 @@ function InsightsTab() {
 
       {loading ? (
         <p className="text-gray-600">Loading...</p>
-      ) : results.length === 0 && hasSearched ? (
-        <p className="text-red-500">No results found for PO: {poNumber}</p>
-      ) : (
+      ) : error ? (
+        <p className="text-red-500">{error}</p>
+      ) : unitResult ? (
+        <table className="w-full border border-gray-300">
+          <thead className="bg-gray-100 text-left">
+            <tr>
+              <th className="border px-3 py-2">SKU</th>
+              <th className="border px-3 py-2">Product</th>
+              <th className="border px-3 py-2">Date Received</th>
+              <th className="border px-3 py-2">Sold</th>
+              <th className="border px-3 py-2">Damaged</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="border px-3 py-2 font-bold">{unitResult.sku}</td>
+              <td className="border px-3 py-2">{unitResult.product_name}</td>
+              <td className="border px-3 py-2">{unitResult.received_date}</td>
+              <td className="border px-3 py-2">{unitResult.sold ? "Yes" : "No"}</td>
+              <td className="border px-3 py-2">{unitResult.is_damaged ? "Yes" : "No"}</td>
+            </tr>
+          </tbody>
+        </table>
+      ) : poResults.length > 0 ? (
         <table className="w-full border border-gray-300">
           <thead className="bg-gray-100 text-left">
             <tr>
@@ -67,7 +109,7 @@ function InsightsTab() {
             </tr>
           </thead>
           <tbody>
-            {results.map((row, idx) => (
+            {poResults.map((row, idx) => (
               <React.Fragment key={idx}>
                 <tr
                   onClick={() => toggleRow(idx)}
@@ -76,7 +118,9 @@ function InsightsTab() {
                   <td className="border px-3 py-2 font-bold">{row.sku}</td>
                   <td className="border px-3 py-2">{row.product_name}</td>
                   <td className="border px-3 py-2">{row.received_date}</td>
-                  <td className="border px-3 py-2">{row.serial_count ?? (row.serials?.length ?? 0)}</td>
+                  <td className="border px-3 py-2">
+                    {row.serials?.length ?? 0}
+                  </td>
                 </tr>
                 {expandedRows[idx] && (
                   <tr>
@@ -93,7 +137,7 @@ function InsightsTab() {
             ))}
           </tbody>
         </table>
-      )}
+      ) : null}
     </div>
   );
 }

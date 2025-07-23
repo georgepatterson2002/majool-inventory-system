@@ -163,3 +163,30 @@ def get_po_details(po_number: str):
             }
             for (sku, name, date), serials in data.items()
         ]
+
+@router.get("/insights/unit-details")
+def get_unit_details(serial_number: str):
+    with engine.connect() as conn:
+        row = conn.execute(text("""
+            SELECT 
+                p.part_number AS sku,
+                p.product_name,
+                iu.serial_assigned_at::date AS received_date,
+                iu.sold,
+                iu.is_damaged
+            FROM inventory_units iu
+            JOIN products p ON iu.product_id = p.product_id
+            WHERE iu.serial_number = :sn
+        """), {"sn": serial_number}).fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Serial number not found")
+
+        return {
+            "sku": row.sku,
+            "product_name": row.product_name,
+            "received_date": str(row.received_date),
+            "sold": row.sold,
+            "is_damaged": row.is_damaged
+        }
+
