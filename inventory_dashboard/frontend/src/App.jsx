@@ -244,7 +244,7 @@ function App() {
                 );
 
                 // expanded rows
-                if (isOpen && skuBreakdowns[row.master_sku_id]) {
+                if (isOpen && Array.isArray(skuBreakdowns[row.master_sku_id])) {
                   skuBreakdowns[row.master_sku_id].forEach((item, idx) => {
                     rows.push(
                       <tr key={`${row.master_sku_id}-${item.sku}-${idx}`} className="text-sm bg-white">
