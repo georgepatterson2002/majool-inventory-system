@@ -1,6 +1,7 @@
 // App.jsx
 import React, { useEffect, useState } from "react";
 import InsightsTab from "./InsightsTab";
+import { ArrowDownTrayIcon } from "@heroicons/react/24/solid";
 
 
 const API_HOST = import.meta.env.VITE_API_HOST;
@@ -99,6 +100,17 @@ function App() {
     }
   };
 
+  const downloadCSV = async () => {
+    const now = new Date().toISOString();
+    const res = await fetch(`${import.meta.env.VITE_API_HOST}/dashboard/insights/monthly-report?cutoff=${now}`);
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "monthly_report.csv";
+    link.click();
+  };
+
   const handleTabChange = (tab) => {
   setActiveTab(tab);
   localStorage.setItem("activeTab", tab);
@@ -119,41 +131,55 @@ function App() {
 
 
 
-      <div className="flex gap-4 mb-6">
-        <button
-          onClick={() => handleTabChange("warehouse")}
-          className={`px-4 py-2 rounded ${activeTab === "warehouse" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"}`}
-        >📦 Warehouse</button>
-        <button
-          onClick={() => handleTabChange("log")}
-          className={`px-4 py-2 rounded ${activeTab === "log" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"}`}
-        >📋 Shipped Log</button>
-        <button
-  onClick={() => handleTabChange("manual")}
-  className={`px-4 py-2 rounded flex items-center gap-1 ${
-    activeTab === "manual" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"
-  }`}
->
-  🛠️ Manual Review
-  {manualCheckItems.length > 0 && (
-    <span
-      className={`ml-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
-        activeTab === "manual" ? "bg-white text-blue-600" : "bg-blue-600 text-white"
-      }`}
-    >
-      {manualCheckItems.length > 5 ? "5+" : manualCheckItems.length}
-    </span>
-  )}
-</button>
+      <div className="flex justify-between items-center mb-6">
+        {/* Tab Buttons (left side) */}
+        <div className="flex gap-4">
+          <button
+            onClick={() => handleTabChange("warehouse")}
+            className={`px-4 py-2 rounded ${activeTab === "warehouse" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"}`}
+          >📦 Warehouse</button>
 
-<button
-  onClick={() => handleTabChange("insights")}
-  className={`px-4 py-2 rounded ${activeTab === "insights" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"}`}
->
-  📊 Insights
-</button>
+          <button
+            onClick={() => handleTabChange("log")}
+            className={`px-4 py-2 rounded ${activeTab === "log" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"}`}
+          >📋 Shipped Log</button>
 
+          <button
+            onClick={() => handleTabChange("manual")}
+            className={`px-4 py-2 rounded flex items-center gap-1 ${
+              activeTab === "manual" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"
+            }`}
+          >
+            🛠️ Manual Review
+            {manualCheckItems.length > 0 && (
+              <span
+                className={`ml-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
+                  activeTab === "manual" ? "bg-white text-blue-600" : "bg-blue-600 text-white"
+                }`}
+              >
+                {manualCheckItems.length > 5 ? "5+" : manualCheckItems.length}
+              </span>
+            )}
+          </button>
 
+          <button
+            onClick={() => handleTabChange("insights")}
+            className={`px-4 py-2 rounded ${activeTab === "insights" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"}`}
+          >
+            📊 Insights
+          </button>
+        </div>
+
+        {/* Right side: CSV download button (warehouse only) */}
+        {activeTab === "warehouse" && (
+          <button
+            onClick={downloadCSV}
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center gap-2"
+          >
+            <ArrowDownTrayIcon className="h-5 w-5 text-white" />
+            Download CSV
+          </button>
+        )}
       </div>
 
       {activeTab === "warehouse" && (
