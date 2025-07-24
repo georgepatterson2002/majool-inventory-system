@@ -317,7 +317,7 @@ def download_monthly_report(cutoff: str):
             headers={"Content-Disposition": "attachment; filename=monthly_report.csv"}
         )
 
-@router.get("/dashboard/sku-breakdown")
+@router.get("/sku-breakdown")
 def get_sku_breakdown(master_sku_id: str):
     try:
         with engine.connect() as conn:
