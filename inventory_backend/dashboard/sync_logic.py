@@ -92,23 +92,74 @@ def sync_veeqo_orders_job():
 
             # --- 2. Check total serial count matches expected ---
             if len(serials) != expected_serials_total:
-                print(f"[MANUAL REVIEW] Serial count mismatch — Order {order_id}, SKU totals: {sku_quantities}, expected serials: {expected_serials_total}, received: {len(serials)}")
-                # Insert manual review per SKU
-                inserted = set()
-                for sku, _ in sku_quantities:
-                    if (order_id, sku) in inserted:
-                        continue
-                    inserted.add((order_id, sku))
-                    existing = conn.execute(text("""
-                        SELECT resolved FROM manual_review
-                        WHERE order_id = :order_id AND sku = :sku
-                    """), {"order_id": order_id, "sku": sku}).fetchone()
-                    if not existing:
+                # Special 512GB fallback: scanned qty == half of expected
+                is_all_512 = all(any(k in sku for k in ["+512gb", "--512gb"]) for sku, _ in sku_quantities)
+                total_qty = sum(qty for _, qty in sku_quantities)
+
+                if is_all_512 and len(serials) == total_qty:
+                    print(f"[INFO] Fallback: {len(serials)} serials for 512GB order with qty {total_qty} (expected {2 * total_qty})")
+
+                    inserted_count = 0
+                    for _ in range(total_qty):
+                        row = conn.execute(text("""
+                            SELECT iu.product_id
+                            FROM inventory_units iu
+                            JOIN products p ON iu.product_id = p.product_id
+                            WHERE iu.sold = FALSE
+                              AND iu.is_damaged = FALSE
+                              AND iu.serial_number != 'NOSER'
+                              AND p.ssd_id = 1
+                              AND iu.product_id NOT IN (
+                                  SELECT uss.product_id
+                                  FROM untracked_serial_sales uss
+                                  GROUP BY uss.product_id
+                                  HAVING SUM(uss.quantity) >= (
+                                      SELECT COUNT(*) FROM inventory_units
+                                      WHERE sold = FALSE AND is_damaged = FALSE AND serial_number != 'NOSER'
+                                        AND product_id = uss.product_id
+                                  )
+                              )
+                            ORDER BY iu.serial_assigned_at ASC
+                            LIMIT 1
+                        """)).fetchone()
+
+                        if not row:
+                            print(f"[WARNING] Only assigned {inserted_count} SSDs for fallback — short by {total_qty - inserted_count}")
+                            break
+
                         conn.execute(text("""
-                            INSERT INTO manual_review (order_id, sku, created_at)
-                            VALUES (:order_id, :sku, :created_at)
-                        """), {"order_id": order_id, "sku": sku, "created_at": shipped_time})
-                continue  # Skip rest of processing for this order
+                            INSERT INTO untracked_serial_sales (product_id, order_id, quantity, created_at)
+                            VALUES (:product_id, :order_id, 1, :created_at)
+                        """), {
+                            "product_id": row.product_id,
+                            "order_id": order_id,
+                            "created_at": shipped_time
+                        })
+
+                        inserted_count += 1
+
+                    expected_serials_total = total_qty  # Adjust so the rest of processing proceeds
+
+                else:
+                    print(f"[MANUAL REVIEW] Serial count mismatch — Order {order_id}, SKU totals: {sku_quantities}, expected serials: {expected_serials_total}, received: {len(serials)}")
+                    # Insert manual review per SKU
+                    inserted = set()
+                    for sku, _ in sku_quantities:
+                        if (order_id, sku) in inserted:
+                            continue
+                        inserted.add((order_id, sku))
+                        existing = conn.execute(text("""
+                            SELECT resolved FROM manual_review
+                            WHERE order_id = :order_id AND sku = :sku
+                        """), {"order_id": order_id, "sku": sku}).fetchone()
+                        if not existing:
+                            conn.execute(text("""
+                                INSERT INTO manual_review (order_id, sku, created_at)
+                                VALUES (:order_id, :sku, :created_at)
+                            """), {"order_id": order_id, "sku": sku, "created_at": shipped_time})
+                    continue  # Skip rest of processing for this order
+
+
 
             # --- 3. Validate all serials exist and sold = False ---
             all_valid = True
