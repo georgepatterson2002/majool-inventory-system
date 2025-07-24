@@ -101,13 +101,16 @@ function App() {
   };
 
   const downloadCSV = async () => {
-    const now = new Date().toISOString();
-    const res = await fetch(`${import.meta.env.VITE_API_HOST}/dashboard/insights/monthly-report?cutoff=${now}`);
+    const now = new Date();
+    const iso = now.toISOString();
+    const dateStr = iso.split("T")[0]; // YYYY-MM-DD
+
+    const res = await fetch(`${import.meta.env.VITE_API_HOST}/dashboard/insights/monthly-report?cutoff=${iso}`);
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "monthly_report.csv";
+    link.download = `monthly_report_${dateStr}.csv`;  // <-- dynamic filename
     link.click();
   };
 

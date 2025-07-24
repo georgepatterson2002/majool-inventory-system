@@ -196,13 +196,6 @@ def get_unit_details(serial_number: str):
             "po_number": row.po_number  # <-- add this line
         }
 
-from fastapi import HTTPException
-from fastapi.responses import StreamingResponse
-from sqlalchemy import text
-from datetime import datetime
-import io
-import csv
-
 @router.get("/insights/monthly-report")
 def download_monthly_report(cutoff: str):
     """Generate monthly CSV summary up to the given cutoff datetime (ISO 8601 string)."""
