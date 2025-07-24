@@ -321,18 +321,34 @@ def download_monthly_report(cutoff: str):
 def get_sku_breakdown(master_sku_id: str):
     with engine.connect() as conn:
         result = conn.execute(text("""
-            SELECT 
+            WITH raw AS (
+              SELECT 
                 CASE 
-                    WHEN iu.sold = FALSE AND iu.is_damaged = TRUE THEN 'Damaged'
-                    ELSE p.part_number
+                  WHEN iu.is_damaged = TRUE THEN 'Damaged'
+                  ELSE p.part_number
                 END AS sku_group,
-                COUNT(*) AS qty
-            FROM inventory_units iu
-            JOIN products p ON iu.product_id = p.product_id
-            WHERE p.master_sku_id = :msku
-              AND iu.sold = FALSE
-            GROUP BY sku_group
-            ORDER BY sku_group
-        """), {"msku": master_sku_id}).fetchall()
+                p.product_id
+              FROM inventory_units iu
+              JOIN products p ON iu.product_id = p.product_id
+              WHERE p.master_sku_id = :msku
+                AND iu.sold = FALSE
+                AND iu.serial_number != 'NOSER'
+            ),
+            soft_alloc AS (
+              SELECT 
+                product_id,
+                SUM(quantity) AS soft_qty
+              FROM untracked_serial_sales
+              GROUP BY product_id
+            )
+            SELECT 
+              r.sku_group,
+              COUNT(*) - COALESCE(sa.soft_qty, 0) AS qty
+            FROM raw r
+            LEFT JOIN soft_alloc sa ON r.product_id = sa.product_id
+            GROUP BY r.sku_group, sa.soft_qty
+            HAVING COUNT(*) - COALESCE(sa.soft_qty, 0) > 0
+            ORDER BY r.sku_group
+        """), {"msku": master_sku_id})
 
-        return [{"sku": row.sku_group, "qty": row.qty} for row in result]
+        return [{"sku": row.sku_group, "qty": row.qty} for row in result.fetchall()]
