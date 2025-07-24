@@ -235,7 +235,7 @@ function App() {
                     className="hover:bg-gray-100 cursor-pointer font-semibold"
                     onClick={() => toggleSkuBreakdown(row.master_sku_id)}
                   >
-                    <td className="border px-3 py-2 text-blue-600 hover:underline">
+                    <td className="border px-3 py-2 font-mono text-gray-800">
                       {row.master_sku_id.replace(/^MSKU-/, "")}
                     </td>
                     <td className="border px-3 py-2">{row.description}</td>
