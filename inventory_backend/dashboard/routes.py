@@ -208,7 +208,7 @@ def download_monthly_report(cutoff: str):
         result = conn.execute(text("""
             WITH params AS (
               SELECT 
-                DATE_TRUNC('month', :cutoff_time) - INTERVAL '1 month' AS month_start,
+                DATE_TRUNC('month', :cutoff_time) AS month_start,
                 :cutoff_time AS cutoff
             ),
             base AS (
@@ -285,7 +285,7 @@ def download_monthly_report(cutoff: str):
                 SUM(reconciled) AS reconciled,
                 SUM(quantity_received) AS quantity_received,
                 SUM(quantity_sold) AS quantity_sold,
-                GREATEST(0, (SUM(qty) + SUM(quantity_sold) - SUM(quantity_received))) AS quantity_last_month,
+                GREATEST(0, SUM(qty) + SUM(quantity_sold) - SUM(quantity_received)) AS quantity_last_month,
                 (SUM(qty) + SUM(damaged) + SUM(reconciled)) AS total
               FROM base
               GROUP BY master_sku
