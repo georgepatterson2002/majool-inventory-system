@@ -319,43 +319,52 @@ def download_monthly_report(cutoff: str):
 
 @router.get("/dashboard/sku-breakdown")
 def get_sku_breakdown(master_sku_id: str):
-    with engine.connect() as conn:
-        result = conn.execute(text("""
-            WITH raw AS (
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("""
+                WITH raw AS (
+                    SELECT 
+                        CASE 
+                          WHEN iu.is_damaged = TRUE THEN 'Damaged'
+                          ELSE p.part_number
+                        END AS sku_group,
+                        p.product_id
+                    FROM inventory_units iu
+                    JOIN products p ON iu.product_id = p.product_id
+                    WHERE p.master_sku_id = :msku
+                      AND iu.sold = FALSE
+                      AND iu.serial_number != 'NOSER'
+                ),
+                soft_alloc AS (
+                    SELECT 
+                        product_id,
+                        SUM(quantity) AS soft_qty
+                    FROM untracked_serial_sales
+                    GROUP BY product_id
+                ),
+                counted AS (
+                    SELECT 
+                        r.sku_group,
+                        COUNT(*) AS raw_qty,
+                        COALESCE(SUM(sa.soft_qty), 0) AS total_soft
+                    FROM raw r
+                    LEFT JOIN soft_alloc sa ON r.product_id = sa.product_id
+                    GROUP BY r.sku_group
+                )
                 SELECT 
-                    CASE 
-                      WHEN iu.is_damaged = TRUE THEN 'Damaged'
-                      ELSE p.part_number
-                    END AS sku_group,
-                    p.product_id
-                FROM inventory_units iu
-                JOIN products p ON iu.product_id = p.product_id
-                WHERE p.master_sku_id = :msku
-                  AND iu.sold = FALSE
-                  AND iu.serial_number != 'NOSER'
-            ),
-            soft_alloc AS (
-                SELECT 
-                    product_id,
-                    SUM(quantity) AS soft_qty
-                FROM untracked_serial_sales
-                GROUP BY product_id
-            ),
-            counted AS (
-                SELECT 
-                    r.sku_group,
-                    COUNT(*) AS raw_qty,
-                    COALESCE(SUM(sa.soft_qty), 0) AS total_soft
-                FROM raw r
-                LEFT JOIN soft_alloc sa ON r.product_id = sa.product_id
-                GROUP BY r.sku_group
-            )
-            SELECT 
-                sku_group AS sku,
-                raw_qty - total_soft AS qty
-            FROM counted
-            WHERE raw_qty - total_soft > 0
-            ORDER BY sku
-        """), {"msku": master_sku_id})
+                    sku_group AS sku,
+                    raw_qty - total_soft AS qty
+                FROM counted
+                WHERE raw_qty - total_soft > 0
+                ORDER BY sku
+            """), {"msku": master_sku_id})
 
-        return [{"sku": row.sku, "qty": row.qty} for row in result.fetchall()]
+            rows = result.fetchall()
+            if not rows:
+                raise HTTPException(status_code=404, detail="No SKU breakdown found.")
+
+            return [{"sku": row.sku, "qty": row.qty} for row in rows]
+
+    except Exception as e:
+        print(f"Error in /dashboard/sku-breakdown: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve SKU breakdown")
