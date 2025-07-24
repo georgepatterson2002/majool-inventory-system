@@ -225,16 +225,17 @@ function App() {
                 )
               )
               .flatMap((row) => {
+                const isOpen = expandedSkus.has(row.master_sku_id);
                 const rows = [];
 
-                // Main product row
+                // main row
                 rows.push(
                   <tr
                     key={row.master_sku_id}
-                    className="bg-white hover:bg-gray-100 cursor-pointer"
+                    className="hover:bg-gray-100 cursor-pointer font-semibold"
                     onClick={() => toggleSkuBreakdown(row.master_sku_id)}
                   >
-                    <td className="border px-3 py-2 font-bold text-blue-600 hover:underline">
+                    <td className="border px-3 py-2 text-blue-600 hover:underline">
                       {row.master_sku_id.replace(/^MSKU-/, "")}
                     </td>
                     <td className="border px-3 py-2">{row.description}</td>
@@ -242,26 +243,26 @@ function App() {
                   </tr>
                 );
 
-                // Expanded breakdown row
-                if (expandedSkus.has(row.master_sku_id) && skuBreakdowns[row.master_sku_id]) {
-                  rows.push(
-                    <tr key={`${row.master_sku_id}-breakdown`} className="bg-gray-50">
-                      <td colSpan={3} className="px-6 py-2">
-                        <ul className="pl-4 list-disc text-sm text-gray-700">
-                          {skuBreakdowns[row.master_sku_id].map((item) => (
-                            <li key={item.sku}>
-                              {item.sku}: {item.qty}
-                            </li>
-                          ))}
-                        </ul>
-                      </td>
-                    </tr>
-                  );
+                // expanded rows
+                if (isOpen && skuBreakdowns[row.master_sku_id]) {
+                  skuBreakdowns[row.master_sku_id].forEach((item, idx) => {
+                    rows.push(
+                      <tr key={`${row.master_sku_id}-${item.sku}-${idx}`} className="text-sm bg-white">
+                        <td className="border px-3 py-1 pl-6">
+                          <span className="text-gray-500">SKU:</span> {item.sku}
+                        </td>
+                        <td className="border px-3 py-1" colSpan={2}>
+                          <span className="text-gray-500">Qty:</span> {item.qty}
+                        </td>
+                      </tr>
+                    );
+                  });
                 }
 
                 return rows;
               })}
           </tbody>
+
         </table>
       )}
 
