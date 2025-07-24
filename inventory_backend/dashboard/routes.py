@@ -9,6 +9,10 @@ from fastapi.responses import JSONResponse
 import pytz
 from .sync_logic import sync_veeqo_orders_job
 
+from fastapi.responses import StreamingResponse
+import io
+import csv
+
 
 
 router = APIRouter()
@@ -191,3 +195,131 @@ def get_unit_details(serial_number: str):
             "is_damaged": row.is_damaged,
             "po_number": row.po_number  # <-- add this line
         }
+
+from fastapi import HTTPException
+from fastapi.responses import StreamingResponse
+from sqlalchemy import text
+from datetime import datetime
+import io
+import csv
+
+@router.get("/insights/monthly-report")
+def download_monthly_report(cutoff: str):
+    """Generate monthly CSV summary up to the given cutoff datetime (ISO 8601 string)."""
+    try:
+        cutoff_time = datetime.fromisoformat(cutoff)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid cutoff datetime")
+
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            WITH params AS (
+              SELECT 
+                DATE_TRUNC('month', :cutoff_time) - INTERVAL '1 month' AS month_start,
+                :cutoff_time AS cutoff
+            ),
+            base AS (
+              SELECT 
+                REPLACE(m.master_sku_id, 'MSKU-', '') AS master_sku,
+                m.description,
+                p.product_id,
+
+                (
+                  (
+                    SELECT COUNT(*)
+                    FROM inventory_units iu
+                    WHERE iu.product_id = p.product_id
+                      AND iu.sold = FALSE
+                      AND iu.is_damaged = FALSE
+                      AND iu.serial_number != 'NOSER'
+                  )
+                  -
+                  COALESCE((
+                    SELECT SUM(quantity)
+                    FROM untracked_serial_sales uss
+                    WHERE uss.product_id = p.product_id
+                  ), 0)
+                ) AS qty,
+
+                (
+                  SELECT COUNT(*)
+                  FROM inventory_units iu
+                  WHERE iu.product_id = p.product_id
+                    AND iu.sold = FALSE
+                    AND iu.is_damaged = TRUE
+                ) AS damaged,
+
+                (
+                  SELECT COUNT(*)
+                  FROM reconciled_items ri
+                  WHERE ri.product_id = p.product_id
+                ) AS reconciled,
+
+                (
+                  SELECT COUNT(*)
+                  FROM inventory_units iu, params
+                  WHERE iu.product_id = p.product_id
+                    AND iu.serial_assigned_at >= params.month_start
+                    AND iu.serial_assigned_at < params.cutoff
+                ) +
+                (
+                  SELECT COUNT(*)
+                  FROM returns r, params
+                  WHERE r.product_id = p.product_id
+                    AND r.return_date >= params.month_start
+                    AND r.return_date < params.cutoff
+                ) AS quantity_received,
+
+                (
+                  SELECT COUNT(*)
+                  FROM inventory_log il
+                  JOIN inventory_units iu ON il.serial_number = iu.serial_number
+                  JOIN params ON TRUE
+                  WHERE iu.product_id = p.product_id
+                    AND il.event_time >= params.month_start
+                    AND il.event_time < params.cutoff
+                ) AS quantity_sold
+
+              FROM products p
+              JOIN master_skus m ON p.master_sku_id = m.master_sku_id
+            ),
+            final AS (
+              SELECT 
+                master_sku,
+                MAX(description) AS description,
+                SUM(qty) AS qty,
+                SUM(damaged) AS damaged,
+                SUM(reconciled) AS reconciled,
+                SUM(quantity_received) AS quantity_received,
+                SUM(quantity_sold) AS quantity_sold,
+                GREATEST(0, (SUM(qty) + SUM(quantity_sold) - SUM(quantity_received))) AS quantity_last_month,
+                (SUM(qty) + SUM(damaged) + SUM(reconciled)) AS total
+              FROM base
+              GROUP BY master_sku
+              HAVING SUM(qty + damaged) > 0
+            )
+            SELECT 
+              master_sku,
+              description,
+              quantity_last_month,
+              quantity_received,
+              quantity_sold,
+              qty,
+              damaged,
+              reconciled,
+              total
+            FROM final
+            ORDER BY master_sku;
+        """), {"cutoff_time": cutoff_time})
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(result.keys())
+        writer.writerows(result.fetchall())
+
+        output.seek(0)
+        return StreamingResponse(
+            output,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=monthly_report.csv"}
+        )

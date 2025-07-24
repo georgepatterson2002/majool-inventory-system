@@ -9,9 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "start:fullstack": "concurrently \"cd ../backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000\" \"vite --host\""
-
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
