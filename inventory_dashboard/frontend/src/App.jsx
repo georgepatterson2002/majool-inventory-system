@@ -12,6 +12,7 @@ function App() {
   const [expandedSkus, setExpandedSkus] = useState(new Set());
   const [log, setLog] = useState({});
   const [manualCheckItems, setManualCheckItems] = useState([]);
+  const [skuBreakdowns, setSkuBreakdowns] = useState({});
   const [activeTab, setActiveTab] = useState(() => {
   return localStorage.getItem("activeTab") || "warehouse";
 });
@@ -87,6 +88,25 @@ function App() {
     } catch (err) {
       console.error("❌ Failed to load inventory log", err);
     }
+  };
+
+  const toggleSkuBreakdown = async (masterSkuId) => {
+    const newSet = new Set(expandedSkus);
+    if (expandedSkus.has(masterSkuId)) {
+      newSet.delete(masterSkuId);
+    } else {
+      newSet.add(masterSkuId);
+      if (!skuBreakdowns[masterSkuId]) {
+        try {
+          const res = await fetch(`${API_HOST}/dashboard/sku-breakdown?master_sku_id=${masterSkuId}`);
+          const data = await res.json();
+          setSkuBreakdowns(prev => ({ ...prev, [masterSkuId]: data }));
+        } catch (err) {
+          console.error("❌ Error fetching breakdown", err);
+        }
+      }
+    }
+    setExpandedSkus(newSet);
   };
 
 
@@ -204,15 +224,43 @@ function App() {
                   { numeric: true, sensitivity: "base" }
                 )
               )
-              .map((row) => (
-                <tr key={row.product_id} className="bg-white hover:bg-gray-100">
-                  <td className="border px-3 py-2 font-bold">
-                    {row.master_sku_id.replace(/^MSKU-/, "")}
-                  </td>
-                  <td className="border px-3 py-2">{row.description}</td>
-                  <td className="border px-3 py-2">{row.quantity}</td>
-                </tr>
-              ))}
+              .flatMap((row) => {
+                const rows = [];
+
+                // Main product row
+                rows.push(
+                  <tr
+                    key={row.master_sku_id}
+                    className="bg-white hover:bg-gray-100 cursor-pointer"
+                    onClick={() => toggleSkuBreakdown(row.master_sku_id)}
+                  >
+                    <td className="border px-3 py-2 font-bold text-blue-600 hover:underline">
+                      {row.master_sku_id.replace(/^MSKU-/, "")}
+                    </td>
+                    <td className="border px-3 py-2">{row.description}</td>
+                    <td className="border px-3 py-2">{row.quantity}</td>
+                  </tr>
+                );
+
+                // Expanded breakdown row
+                if (expandedSkus.has(row.master_sku_id) && skuBreakdowns[row.master_sku_id]) {
+                  rows.push(
+                    <tr key={`${row.master_sku_id}-breakdown`} className="bg-gray-50">
+                      <td colSpan={3} className="px-6 py-2">
+                        <ul className="pl-4 list-disc text-sm text-gray-700">
+                          {skuBreakdowns[row.master_sku_id].map((item) => (
+                            <li key={item.sku}>
+                              {item.sku}: {item.qty}
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return rows;
+              })}
           </tbody>
         </table>
       )}
