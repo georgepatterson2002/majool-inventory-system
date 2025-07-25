@@ -4,8 +4,6 @@ A full-stack inventory tracking system with real-time data sync, desktop scannin
 
 > 🚀 Used daily by warehouse and ops teams at Majool Inc.
 
----
-
 ## 🧠 What This Project Demonstrates
 
 - End-to-end architecture (API, PostgreSQL, React, Python desktop app)
