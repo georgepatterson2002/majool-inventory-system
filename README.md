@@ -4,6 +4,12 @@ A full-stack inventory tracking system with real-time data sync, desktop scannin
 
 > 🚀 Used daily by warehouse and ops teams at Majool Inc.
 
+## 🎥 System Demo
+
+https://github.com/user-attachments/assets/e6268347-40a2-49bc-979a-b05587e0f383
+
+*This video shows the full system workflow in action.*
+
 ---
 
 ## 🧠 What This Project Demonstrates
