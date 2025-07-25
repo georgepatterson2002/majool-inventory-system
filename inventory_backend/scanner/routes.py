@@ -912,7 +912,30 @@ def resolve_reconciled_item(req: ResolveReconciledRequest):
 def mark_damaged_unit(req: DamageRequest):
     try:
         with engine.begin() as conn:
-            result = conn.execute(
+            # Check if the serial exists and whether it's sold
+            row = conn.execute(
+                text("""
+                    SELECT iu.sold, p.part_number, p.product_name
+                    FROM inventory_units iu
+                    JOIN products p ON iu.product_id = p.product_id
+                    WHERE iu.serial_number = :sn
+                """),
+                {"sn": req.serial_number}
+            ).fetchone()
+
+            if not row:
+                raise HTTPException(status_code=404, detail="Serial number not found.")
+
+            if row.sold:
+                # Include SKU and product name in the error message
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Item {row.part_number} ({row.product_name}) is sold. "
+                           f"Process a return before marking as damaged."
+                )
+
+            # Proceed to mark as damaged
+            conn.execute(
                 text("""
                     UPDATE inventory_units
                     SET is_damaged = TRUE
@@ -920,13 +943,14 @@ def mark_damaged_unit(req: DamageRequest):
                 """),
                 {"sn": req.serial_number}
             )
-            if result.rowcount == 0:
-                raise HTTPException(status_code=404, detail="Serial number not found.")
+
         return {"success": True}
+
+    except HTTPException:
+        raise
     except Exception as e:
         print("ERROR in /mark-damaged:", str(e))
         raise HTTPException(status_code=500, detail="Failed to mark unit as damaged")
-
 
 @router.post("/log-untracked-sale")
 def log_untracked_sale(req: LogUntrackedSaleRequest):
