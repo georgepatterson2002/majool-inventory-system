@@ -157,7 +157,7 @@ This system uses a normalized PostgreSQL schema to track products, inventory uni
 
 ---
 
-## Screenshots
+## Screenshots (from an earlier build)
 
 ![Dashboard view](screenshots/DashboardBlur.png)
 ![Log view](screenshots/LogBlur.png)
