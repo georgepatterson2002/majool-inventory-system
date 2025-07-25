@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel
 from sqlalchemy import text
-from typing import Optional
+from typing import Optional, List
 from ..database import engine
 from ..security import verify_password
 import traceback
@@ -83,6 +83,12 @@ class LogUntrackedSaleRequest(BaseModel):
     product_id: int
     order_id: str
     quantity: int
+
+class ManualOrderPayload(BaseModel):
+    product_id: int
+    quantity: int
+    order_id: Optional[str] = None
+    serials: Optional[List[str]] = None
 
 @router.get("/ping")
 def scanner_ping():
@@ -940,3 +946,49 @@ def log_untracked_sale(req: LogUntrackedSaleRequest):
     except Exception as e:
         print("ERROR in /log-untracked-sale:", str(e))
         raise HTTPException(status_code=500, detail="Failed to log untracked serial sale")
+    
+@router.post("/manual-order")
+def create_manual_order(order: ManualOrderPayload):
+    with engine.begin() as conn:
+        if order.serials:
+            # Check order_id uniqueness
+            existing = conn.execute(text("SELECT 1 FROM inventory_log WHERE order_id = :oid LIMIT 1"),
+                                    {"oid": order.order_id}).fetchone()
+            if existing:
+                raise HTTPException(status_code=400, detail="Order ID already exists.")
+
+            for serial in order.serials:
+                row = conn.execute(text("SELECT sold FROM inventory_units WHERE serial_number = :s"),
+                                   {"s": serial}).fetchone()
+                if not row:
+                    raise HTTPException(status_code=400, detail=f"Serial {serial} not found.")
+                if row.sold:
+                    raise HTTPException(status_code=400, detail=f"Serial {serial} already sold.")
+
+                conn.execute(text("""
+                    INSERT INTO inventory_log (sku, serial_number, order_id, event_time)
+                    SELECT p.part_number, :serial, :oid, NOW()
+                    FROM products p WHERE p.product_id = :pid
+                """), {"serial": serial, "oid": order.order_id, "pid": order.product_id})
+
+                conn.execute(text("""
+                    UPDATE inventory_units SET sold = TRUE WHERE serial_number = :serial
+                """), {"serial": serial})
+
+        else:
+            res = conn.execute(text("""
+                INSERT INTO untracked_serial_sales (product_id, quantity, created_at)
+                VALUES (:pid, :qty, NOW()) RETURNING id
+            """), {"pid": order.product_id, "qty": order.quantity})
+            row_id = res.fetchone()[0]
+
+            fake_order_id = f"SA-ORDER-{row_id}"
+            for i in range(order.quantity):
+                fake_serial = f"SOFTALL{row_id}-{i+1}"
+                conn.execute(text("""
+                    INSERT INTO inventory_log (sku, serial_number, order_id, event_time)
+                    SELECT p.part_number, :serial, :oid, NOW()
+                    FROM products p WHERE p.product_id = :pid
+                """), {"serial": fake_serial, "oid": fake_order_id, "pid": order.product_id})
+
+    return {"status": "ok"}
