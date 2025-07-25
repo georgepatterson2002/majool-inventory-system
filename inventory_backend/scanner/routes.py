@@ -1000,13 +1000,13 @@ def create_manual_order(order: ManualOrderPayload):
                 """), {"serial": serial})
 
         else:
-            res = conn.execute(text("""
-                INSERT INTO untracked_serial_sales (product_id, quantity, created_at)
-                VALUES (:pid, :qty, NOW()) RETURNING id
-            """), {"pid": order.product_id, "qty": order.quantity})
-            row_id = res.fetchone()[0]
+            fake_order_id = f"SA-ORDER-{int(datetime.now().timestamp())}"
 
-            fake_order_id = f"SA-ORDER-{row_id}"
+            res = conn.execute(text("""
+                INSERT INTO untracked_serial_sales (product_id, order_id, quantity, created_at)
+                VALUES (:pid, :oid, :qty, NOW()) RETURNING id
+            """), {"pid": order.product_id, "oid": fake_order_id, "qty": order.quantity})
+            row_id = res.fetchone()[0]
             for i in range(order.quantity):
                 fake_serial = f"SOFTALL{row_id}-{i+1}"
                 conn.execute(text("""
