@@ -8,7 +8,7 @@ A full-stack inventory tracking system with real-time data sync, desktop scannin
 
 https://github.com/user-attachments/assets/e6268347-40a2-49bc-979a-b05587e0f383
 
-*This video shows the full system workflow in action.*
+*This video shows the full system workflow, including the updated scanner and dashboard features.*
 
 ---
 
@@ -16,7 +16,7 @@ https://github.com/user-attachments/assets/e6268347-40a2-49bc-979a-b05587e0f383
 
 - End-to-end architecture (API, PostgreSQL, React, Python desktop app)
 - Real-time sync with external platforms (e.g., Veeqo)
-- Inventory workflows with serial tracking, return handling, and edge case resolution
+- Inventory workflows with serial tracking, return handling, and error resolution
 - Role-based web dashboard for operations and admin staff
 - Packaged desktop scanner app (PyInstaller) for Windows deployment
 - Secure and environment-variable driven configuration
@@ -29,11 +29,15 @@ https://github.com/user-attachments/assets/e6268347-40a2-49bc-979a-b05587e0f383
 - 📦 Real-time inventory tracking across multiple platforms
 - 🔄 Sync orders and product updates with external systems like Veeqo
 - 🧾 Log every serial-numbered unit from delivery to sale
-- 🖥️ Desktop app for scanning and assigning serial numbers
+- 🖥️ Desktop app for scanning and assigning serial numbers, with bulk edit and error recovery tools
 - 🧑‍💼 Web dashboard for admins to manage inventory, verify shipments, and run manual checks
+- 📊 Insights tab with PO and serial lookup for quick audits
+- 📋 Shipped log with expandable order history and serial-level detail
+- 🛠️ Manual review queue with dynamic badge indicators
 - 🗃️ Local backups saved daily as CSV
+- 📤 One-click monthly CSV report export for reporting and reconciliation
 
-If you're using a different fulfillment platform, you'll need to adjust the `/api/sync-veeqo-orders` route and any related data processing logic accordingly.
+If you're using a different fulfillment platform, you'll need to adjust the `/api/sync-veeqo-orders` route and related data processing logic accordingly.
 
 ---
 
@@ -70,6 +74,12 @@ The backend sync logic is built around the Veeqo API and powers several key feat
 
 This system uses a normalized PostgreSQL schema to track products, inventory units, stock logs, users, and manual checks. Core tables:
 
+### `brands`
+| Column       | Type    | Description                  |
+|--------------|---------|------------------------------|
+| brand_id     | SERIAL  | Primary key                  |
+| brand_name   | TEXT    | Unique brand name            |
+
 ### `categories`
 | Column       | Type    | Description                  |
 |--------------|---------|------------------------------|
@@ -90,8 +100,9 @@ This system uses a normalized PostgreSQL schema to track products, inventory uni
 | master_sku_id  | TEXT    | FK to `master_skus`                      |
 | part_number    | TEXT    | Unique part number                       |
 | product_name   | TEXT    | Name of product                          |
-| brand          | TEXT    | Manufacturer or brand                    |
 | category_id    | INT     | FK to `categories`                       |
+| brand          | INT     | FK to `brands`                           |
+| ssd_id         | INT     | FK to `ssds`                             |
 
 ### `inventory_units`
 | Column              | Type      | Description                                 |
@@ -104,6 +115,7 @@ This system uses a normalized PostgreSQL schema to track products, inventory uni
 | po_number           | TEXT      | Purchase order reference (default `UNKNOWN`)|
 | sn_prefix           | VARCHAR(2)| Optional serial prefix                      |
 | sold                | BOOLEAN   | Indicates sale status                       |
+| is_damaged          | BOOLEAN   | Flags damaged units                         |
 
 ### `inventory_log`
 | Column        | Type      | Description                      |
@@ -138,6 +150,54 @@ This system uses a normalized PostgreSQL schema to track products, inventory uni
 | sold                | BOOLEAN   | Whether it was sold before return        |
 | return_date         | TIMESTAMP | Defaults to `CURRENT_TIMESTAMP`          |
 
+### `repairs`
+| Column              | Type      | Description                              |
+|---------------------|-----------|------------------------------------------|
+| repair_id           | SERIAL    | Primary key                              |
+| unit_id             | INT       | FK to `inventory_units`                  |
+| old_product_id      | INT       | Original product before repair           |
+| new_product_id      | INT       | Updated product after repair             |
+| repaired_at         | TIMESTAMP | Defaults to `CURRENT_TIMESTAMP`          |
+
+### `disposals`
+| Column              | Type      | Description                              |
+|---------------------|-----------|------------------------------------------|
+| disposal_id         | SERIAL    | Primary key                              |
+| unit_id             | INT       | FK to `inventory_units`                  |
+| original_product_id | INT       | Product being disposed                   |
+| disposed_at         | TIMESTAMP | Defaults to `CURRENT_TIMESTAMP`          |
+
+### `reconciled_items`
+| Column        | Type      | Description                      |
+|---------------|-----------|----------------------------------|
+| reconciled_id | SERIAL    | Primary key                      |
+| product_id    | INT       | FK to `products`                 |
+| serial_number | TEXT      | Reconciled serial                |
+| memo_number   | TEXT      | Reference memo                   |
+| reconciled_at | TIMESTAMP | Defaults to `CURRENT_TIMESTAMP`  |
+| resolved      | BOOLEAN   | Indicates if resolved            |
+
+### `untracked_serial_sales`
+| Column        | Type      | Description                      |
+|---------------|-----------|----------------------------------|
+| id            | SERIAL    | Primary key                      |
+| product_id    | INT       | FK to `products`                 |
+| order_id      | TEXT      | Order reference                  |
+| quantity      | INT       | Quantity sold without serials    |
+| created_at    | TIMESTAMP | Defaults to `CURRENT_TIMESTAMP`  |
+
+### `brands`
+| Column        | Type    | Description                        |
+|---------------|---------|------------------------------------|
+| brand_id      | SERIAL  | Primary key                        |
+| brand_name    | TEXT    | Unique brand name                  |
+
+### `ssds`
+| Column        | Type    | Description                        |
+|---------------|---------|------------------------------------|
+| ssd_id        | SERIAL  | Primary key                        |
+| label         | TEXT    | Label for SSD type (e.g., 512GB)   |
+
 ### `users`
 | Column        | Type    | Description                        |
 |---------------|---------|------------------------------------|
@@ -153,11 +213,15 @@ This system uses a normalized PostgreSQL schema to track products, inventory uni
 - `view_master_sku_summary`: Aggregates master SKUs with product variant counts and total inventory units
 - `view_product_stock_summary`: Supports frontend dashboard grouping
 - `view_serials_with_part_numbers`: Lists inventory serials with part numbers and PO info
+- `view_product_details_readable`: Joins products with brand and category for UI
+- `view_monthly_inventory_summary`: Summarized monthly movement for reports
 - `manual_review_log_view`: Matches serials against shipped items and flags missing data
 
 ---
 
-## Screenshots (from an earlier build)
+## Screenshots (Previous Version)
+
+These screenshots show an earlier build of the system. For the most up-to-date functionality, see the demo video above.
 
 ![Dashboard view](screenshots/DashboardBlur.png)
 ![Log view](screenshots/LogBlur.png)
