@@ -289,7 +289,8 @@ def download_monthly_report(cutoff: str):
                 (SUM(qty) + SUM(damaged) + SUM(reconciled)) AS total
               FROM base
               GROUP BY master_sku
-              HAVING SUM(qty + damaged) > 0
+              HAVING 
+                SUM(qty + damaged + reconciled + quantity_received + quantity_sold) > 0
             )
             SELECT 
               master_sku,
