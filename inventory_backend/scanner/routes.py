@@ -26,6 +26,7 @@ class ResolveRequest(BaseModel):
     order_id: str
     sku: str
     user_id: int
+    quantity: int
 
 class FixSerialStatusRequest(BaseModel):
     serial_number: str
@@ -414,26 +415,62 @@ def get_manual_review(resolved: bool = False):
 
 @router.post("/manual-review/resolve")
 def resolve_manual_review(req: ResolveRequest):
-    try:
-        with engine.begin() as conn:
-            result = conn.execute(
-                text("""
-                    UPDATE manual_review
-                    SET resolved = TRUE,
-                    resolved_by_user_id = :uid
-                    WHERE order_id = :oid AND sku = :sku AND resolved = FALSE
-                """),
-                {"uid": req.user_id, "oid": req.order_id, "sku": req.sku}
-            )
+    with engine.begin() as conn:
+        #  Mark manual review as resolved
+        conn.execute(text("""
+            UPDATE manual_review
+            SET resolved = TRUE, resolved_by_user_id = :user_id
+            WHERE order_id = :order_id AND sku = :sku
+        """), req.dict())
 
-            if result.rowcount == 0:
-                raise HTTPException(status_code=404, detail="Review not found or already resolved")
+        #  SSD allocation logic
+        sku_lower = req.sku.lower()
+        needs_1tb = any(k in sku_lower for k in ["+1tb", "--1tb", "b0d1d5j1j1"])
+        needs_512 = any(k in sku_lower for k in ["+512gb", "--512gb"])
 
-        return {"success": True}
-    except Exception as e:
-        print("ERROR in /manual-review/resolve:", str(e))
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-    
+        if needs_1tb or needs_512:
+            ssd_id = 2 if needs_1tb else 1
+
+            # Fetch SSD product info
+            ssd = conn.execute(text("""
+                SELECT product_id, part_number FROM products WHERE ssd_id = :sid LIMIT 1
+            """), {"sid": ssd_id}).fetchone()
+
+            if ssd:
+                #  Step 1: Upsert into untracked_serial_sales
+                existing = conn.execute(text("""
+                    SELECT id, quantity FROM untracked_serial_sales
+                    WHERE order_id = :oid AND product_id = :pid
+                """), {"oid": req.order_id, "pid": ssd.product_id}).fetchone()
+
+                if existing:
+                    new_qty = existing.quantity + req.quantity
+                    conn.execute(text("""
+                        UPDATE untracked_serial_sales
+                        SET quantity = :qty
+                        WHERE id = :id
+                    """), {"qty": new_qty, "id": existing.id})
+                    existing_count = existing.quantity
+                else:
+                    conn.execute(text("""
+                        INSERT INTO untracked_serial_sales (product_id, order_id, quantity, created_at)
+                        VALUES (:pid, :oid, :qty, NOW())
+                    """), {"pid": ssd.product_id, "oid": req.order_id, "qty": req.quantity})
+                    existing_count = 0
+
+                #  Step 2: Insert placeholder serials into inventory_log
+                for i in range(existing_count + 1, existing_count + req.quantity + 1):
+                    placeholder_serial = f"SSD-SOFT-{req.order_id}-{i}"
+                    conn.execute(text("""
+                        INSERT INTO inventory_log (sku, serial_number, order_id, event_time)
+                        VALUES (:sku, :serial, :oid, NOW())
+                    """), {
+                        "sku": ssd.part_number,
+                        "serial": placeholder_serial,
+                        "oid": req.order_id
+                    })
+
+    return {"success": True}
     
 @router.post("/fix-serial-status")
 def fix_serial_status(req: FixSerialStatusRequest):
