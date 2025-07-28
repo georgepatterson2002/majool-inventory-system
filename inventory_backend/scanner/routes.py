@@ -422,7 +422,10 @@ def resolve_manual_review(req: ResolveRequest):
             SET resolved = TRUE, resolved_by_user_id = :user_id
             WHERE order_id = :order_id AND sku = :sku
         """), req.dict())
-
+        
+        if req.quantity == 0:
+         return {"success": True}
+        
         #  SSD allocation logic
         sku_lower = req.sku.lower()
         needs_1tb = any(k in sku_lower for k in ["+1tb", "--1tb", "b0d1d5j1j1"])
