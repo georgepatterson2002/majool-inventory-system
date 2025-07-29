@@ -256,26 +256,61 @@ function App() {
                         </td>
                         <td className="border px-3 py-1">
                           {item.sku !== "Damaged" && (
-                            <div className="flex items-center">
+                            <div className="flex items-center relative">
                               <span className="mr-1">$</span>
                               <input
-                                type="text"
-                                inputMode="decimal"
-                                pattern="[0-9]*[.,]?[0-9]*"
-                                className="border rounded px-1 w-24"
-                                defaultValue={item.price ?? ""}
-                                placeholder="-"
-                                onBlur={(e) => {
-                                  const val = parseFloat(e.target.value);
-                                  if (!isNaN(val)) {
-                                    fetch(`${API_HOST}/product-price`, {
-                                      method: "POST",
-                                      headers: { "Content-Type": "application/json" },
-                                      body: JSON.stringify({ product_id: item.product_id, price: val })
-                                    });
-                                  }
+                                type="number"
+                                step="0.01"
+                                className="border rounded px-1 w-20"
+                                value={item.price ?? ""}
+                                onFocus={() => {
+                                  setSkuBreakdowns(prev => ({
+                                    ...prev,
+                                    [row.master_sku_id]: prev[row.master_sku_id].map(x =>
+                                      x.product_id === item.product_id ? { ...x, _focused: true } : x
+                                    )
+                                  }));
+                                }}
+                                onBlur={() => {
+                                  setSkuBreakdowns(prev => ({
+                                    ...prev,
+                                    [row.master_sku_id]: prev[row.master_sku_id].map(x =>
+                                      x.product_id === item.product_id ? { ...x, _focused: false } : x
+                                    )
+                                  }));
+                                }}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setSkuBreakdowns(prev => ({
+                                    ...prev,
+                                    [row.master_sku_id]: prev[row.master_sku_id].map(x =>
+                                      x.product_id === item.product_id ? { ...x, price: val } : x
+                                    )
+                                  }));
                                 }}
                               />
+                              {item._focused && (
+                                <button
+                                  className="ml-2 px-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                  onMouseDown={async (e) => {
+                                    e.preventDefault(); // prevents blur before click
+                                    const val = parseFloat(item.price);
+                                    if (!isNaN(val)) {
+                                      await fetch(`${API_HOST}/product-price`, {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        body: JSON.stringify({ product_id: item.product_id, price: val })
+                                      });
+                                      // Re-fetch the SKU breakdown to refresh data
+                                      const res = await fetch(`${API_HOST}/dashboard/sku-breakdown?master_sku_id=${row.master_sku_id}`);
+                                      const data = await res.json();
+                                      setSkuBreakdowns(prev => ({ ...prev, [row.master_sku_id]: data }));
+                                    }
+                                  }}
+                                >
+                                  Save
+                                </button>
+                              )}
                             </div>
                           )}
                         </td>
