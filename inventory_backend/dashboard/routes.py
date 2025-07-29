@@ -386,19 +386,24 @@ def get_sku_breakdown(master_sku_id: str):
         print(f"Error in /dashboard/sku-breakdown: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve SKU breakdown")
 
-@router.post("/dashboard/product-price")
+@router.post("/product-price")
 async def update_price(req: Request):
     try:
         data = await req.json()
+        print("Incoming data:", data)
+
         product_id = data.get("product_id")
         price = data.get("price")
 
         if product_id is None:
+            print("Missing product_id")
             raise HTTPException(status_code=400, detail="Missing product_id")
 
-        # If price is None or empty, don't change anything
         if price is None:
+            print("ℹNo price provided, skipping update")
             return {"status": "skipped", "reason": "No price provided"}
+
+        print(f"Updating product_id={product_id} with price={price}")
 
         with engine.begin() as conn:
             conn.execute(
@@ -406,9 +411,10 @@ async def update_price(req: Request):
                 {"pid": product_id, "price": price}
             )
 
+        print("Update successful")
         return {"status": "ok", "product_id": product_id, "price": price}
 
     except Exception as e:
         print("Error in product-price:", e)
-        traceback.print_exc()
+        import traceback; traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal Server Error")
