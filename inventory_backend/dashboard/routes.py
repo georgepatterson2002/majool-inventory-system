@@ -13,6 +13,7 @@ from .sync_logic import sync_veeqo_orders_job
 from fastapi.responses import StreamingResponse
 import io
 import csv
+import traceback
 
 class PriceUpdate(BaseModel):
     product_id: int
@@ -385,12 +386,14 @@ def get_sku_breakdown(master_sku_id: str):
         print(f"Error in /dashboard/sku-breakdown: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve SKU breakdown")
 
-@router.post("/product-price")
-def update_product_price(data: PriceUpdate):
-    with engine.begin() as conn:
-        conn.execute(text("""
-            UPDATE products
-            SET price = :price
-            WHERE product_id = :pid
-        """), {"pid": data.product_id, "price": data.price})
-    return {"status": "ok"}
+@router.post("/dashboard/product-price")
+async def update_price(req: Request):
+    try:
+        data = await req.json()
+        product_id = data.get("product_id")
+        price = data.get("price")
+        # ... update query
+    except Exception as e:
+        print("Error in product-price:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal Server Error")
