@@ -13,7 +13,9 @@ from fastapi.responses import StreamingResponse
 import io
 import csv
 
-
+class PriceUpdate(BaseModel):
+    product_id: int
+    price: float
 
 router = APIRouter()
 
@@ -329,7 +331,8 @@ def get_sku_breakdown(master_sku_id: str):
                           WHEN iu.is_damaged = TRUE THEN 'Damaged'
                           ELSE p.part_number
                         END AS sku_group,
-                        p.product_id
+                        p.product_id,
+                        p.price
                     FROM inventory_units iu
                     JOIN products p ON iu.product_id = p.product_id
                     WHERE p.master_sku_id = :msku
@@ -346,15 +349,19 @@ def get_sku_breakdown(master_sku_id: str):
                 counted AS (
                     SELECT 
                         r.sku_group,
+                        r.product_id,
+                        r.price,
                         COUNT(*) AS raw_qty,
                         COALESCE(SUM(sa.soft_qty), 0) AS total_soft
                     FROM raw r
                     LEFT JOIN soft_alloc sa ON r.product_id = sa.product_id
-                    GROUP BY r.sku_group
+                    GROUP BY r.sku_group, r.product_id, r.price
                 )
                 SELECT 
                     sku_group AS sku,
-                    raw_qty - total_soft AS qty
+                    raw_qty - total_soft AS qty,
+                    product_id,
+                    price
                 FROM counted
                 WHERE raw_qty - total_soft > 0
                 ORDER BY sku
@@ -364,8 +371,25 @@ def get_sku_breakdown(master_sku_id: str):
             if not rows:
                 raise HTTPException(status_code=404, detail="No SKU breakdown found.")
 
-            return [{"sku": row.sku, "qty": row.qty} for row in rows]
+            return [
+                {
+                    "sku": row.sku,
+                    "qty": row.qty,
+                    "product_id": row.product_id,
+                    "price": float(row.price) if row.price is not None else None
+                } for row in rows
+            ]
 
     except Exception as e:
         print(f"Error in /dashboard/sku-breakdown: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve SKU breakdown")
+
+@router.post("/product-price")
+def update_product_price(data: PriceUpdate):
+    with engine.begin() as conn:
+        conn.execute(text("""
+            UPDATE products
+            SET price = :price
+            WHERE product_id = :pid
+        """), {"pid": data.product_id, "price": data.price})
+    return {"status": "ok"}
