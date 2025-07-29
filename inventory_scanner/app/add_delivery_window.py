@@ -1,13 +1,13 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QPushButton, QComboBox,
-    QLineEdit, QMessageBox, QFormLayout
+    QLineEdit, QMessageBox, QFormLayout, QCheckBox
 )
 from PyQt5.QtGui import QIntValidator
 from PyQt5.QtCore import Qt
 from app.api_client import fetch_product_list, add_delivery
 
 class AddDeliveryForm(QWidget):
-    def __init__(self, user_id, refresh_callback, default_product_id=None):
+    def __init__(self, user_id, refresh_callback, default_product_id=None, damaged_tab=None):
         super().__init__()
         self.refresh_callback = refresh_callback  # should expect go_to_scan param
         self.user_id = user_id
@@ -33,6 +33,8 @@ class AddDeliveryForm(QWidget):
         self.prefix_input.setPlaceholderText("Optional (e.g. CN, SP)")
         self.prefix_input.setMaxLength(2)
 
+        self.damaged_checkbox = QCheckBox("Items Are Damaged")
+
         self.submit_button = QPushButton("Confirm Delivery")
         self.submit_button.clicked.connect(self.submit_delivery)
 
@@ -43,8 +45,11 @@ class AddDeliveryForm(QWidget):
         layout.addRow("Quantity:", self.qty_input)
         layout.addRow("PO Number:", self.po_input)
         layout.addRow("SN Prefix (optional):", self.prefix_input)
+        layout.addRow(self.damaged_checkbox)
         layout.addWidget(self.submit_button)
         self.setLayout(layout)
+
+        self.damaged_tab = damaged_tab
 
         self.load_products()
 
@@ -67,6 +72,7 @@ class AddDeliveryForm(QWidget):
         quantity_str = self.qty_input.text().strip()
         po_number = self.po_input.text().strip()
         sn_prefix = self.prefix_input.text().strip().upper()
+        is_damaged = self.damaged_checkbox.isChecked()
 
         if not quantity_str.isdigit() or int(quantity_str) <= 0:
             QMessageBox.warning(self, "Invalid Quantity", "Please enter a valid quantity.")
@@ -86,9 +92,19 @@ class AddDeliveryForm(QWidget):
 
         quantity = int(quantity_str)
 
-        result = add_delivery(product_id, quantity, self.user_id, po_number, sn_prefix if sn_prefix else None)
+        result = add_delivery(
+            product_id,
+            quantity,
+            self.user_id,
+            po_number,
+            sn_prefix if sn_prefix else None,
+            is_damaged=is_damaged
+        )
 
         if result["success"]:
+            if is_damaged and self.damaged_tab:
+                self.damaged_tab.load_damaged_units()
+
             QMessageBox.information(self, "Success", "Delivery added.")
             self.refresh_callback(go_to_scan=True)
 
