@@ -251,8 +251,33 @@ function App() {
                         <td className="border px-3 py-1 pl-6">
                           <span className="text-gray-500">SKU:</span> {item.sku}
                         </td>
-                        <td className="border px-3 py-1" colSpan={2}>
+                        <td className="border px-3 py-1">
                           <span className="text-gray-500">Qty:</span> {item.qty}
+                        </td>
+                        <td className="border px-3 py-1">
+                          {item.sku !== "Damaged" && (
+                            <div className="flex items-center">
+                              <span className="mr-1">$</span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                pattern="[0-9]*[.,]?[0-9]*"
+                                className="border rounded px-1 w-24"
+                                defaultValue={item.price ?? ""}
+                                placeholder="-"
+                                onBlur={(e) => {
+                                  const val = parseFloat(e.target.value);
+                                  if (!isNaN(val)) {
+                                    fetch(`${API_HOST}/product-price`, {
+                                      method: "POST",
+                                      headers: { "Content-Type": "application/json" },
+                                      body: JSON.stringify({ product_id: item.product_id, price: val })
+                                    });
+                                  }
+                                }}
+                              />
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
