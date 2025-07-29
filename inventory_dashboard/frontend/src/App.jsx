@@ -296,7 +296,7 @@ function App() {
                                     e.preventDefault(); // prevents blur before click
                                     const val = parseFloat(item.price);
                                     if (!isNaN(val)) {
-                                      await fetch(`${API_HOST}/product-price`, {
+                                      await fetch(`${API_HOST}/dashboard/product-price`, {
                                         method: "POST",
                                         headers: { "Content-Type": "application/json" },
                                         body: JSON.stringify({ product_id: item.product_id, price: val })
