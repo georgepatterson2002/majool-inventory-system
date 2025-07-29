@@ -44,13 +44,14 @@ def fetch_product_list():
         print("Error fetching products:", e)
         return []
 
-def add_delivery(product_id, quantity, user_id, po_number, sn_prefix=None):
+def add_delivery(product_id, quantity, user_id, po_number, sn_prefix=None, is_damaged=False):
     try:
         payload = {
             "product_id": product_id,
             "quantity": quantity,
             "user_id": user_id,
-            "po_number": po_number
+            "po_number": po_number,
+            "is_damaged": is_damaged 
         }
 
         if sn_prefix:  # Include prefix only if provided
@@ -90,7 +91,7 @@ def fetch_categories():
         print("Failed to fetch categories:", e)
         return []
 
-def add_product(part_number, product_name, brand, master_sku_id, category_id):
+def add_product(part_number, product_name, brand, master_sku_id, category_id, ssd_id=None):
     payload = {
         "part_number": part_number,
         "product_name": product_name,
@@ -99,13 +100,13 @@ def add_product(part_number, product_name, brand, master_sku_id, category_id):
         "category_id": category_id
     }
 
+    if ssd_id is not None:  #  Only include if provided
+        payload["ssd_id"] = ssd_id
+
     print("🚀 Sending to backend:", payload)
 
     try:
-        r = requests.post(
-            f"{API_BASE_URL}/add-product",
-            json=payload
-        )
+        r = requests.post(f"{API_BASE_URL}/add-product", json=payload)
         if r.status_code == 200:
             return {"success": True}
         else:
@@ -139,11 +140,12 @@ def fetch_manual_reviews():
         print("Error fetching manual reviews:", e)
         return []
 
-def resolve_manual_review(order_id, sku, user_id):
+def resolve_manual_review(order_id, sku, user_id, quantity):
     payload = {
         "order_id": order_id,
         "sku": sku,
-        "user_id": user_id
+        "user_id": user_id,
+        "quantity": quantity
     }
 
     try:
@@ -184,3 +186,74 @@ def create_user(username, hashed_password, is_admin=False):
             return {"success": False, "detail": r.json().get("detail", "Unknown error")}
     except Exception as e:
         return {"success": False, "detail": str(e)}
+
+def fetch_ssd_types():
+    try:
+        response = requests.get(f"{API_BASE_URL}/ssds")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print("Failed to fetch SSD types:", response.status_code, response.text)
+            return []
+    except Exception as e:
+        print("Error fetching SSD types:", e)
+        return []
+
+def fetch_reconciled_items():
+    try:
+        r = requests.get(f"{API_BASE_URL}/reconciled-items")
+        return r.json() if r.status_code == 200 else []
+    except Exception as e:
+        print("Error fetching reconciled items:", e)
+        return []
+
+def add_reconciled_item(product_id, serial_number, memo_number):
+    try:
+        r = requests.post(f"{API_BASE_URL}/reconciled-items", json={
+            "product_id": product_id,
+            "serial_number": serial_number,
+            "memo_number": memo_number
+        })
+        return r.json() if r.status_code == 200 else {"success": False, "detail": r.text}
+    except Exception as e:
+        print("Error adding reconciled item:", e)
+        return {"success": False, "detail": str(e)}
+
+def reconcile_from_existing(serial_number, memo_number):
+    try:
+        r = requests.post(f"{API_BASE_URL}/reconcile-from-existing", json={
+            "serial_number": serial_number,
+            "memo_number": memo_number
+        })
+        return r.json() if r.status_code == 200 else {"success": False, "detail": r.text}
+    except Exception as e:
+        print("Error reconciling from existing unit:", e)
+        return {"success": False, "detail": str(e)}
+
+def resolve_reconciled_item(reconciled_id):
+    try:
+        r = requests.post(f"{API_BASE_URL}/reconciled-items/resolve", json={"reconciled_id": reconciled_id})
+        return r.json() if r.status_code == 200 else {"success": False, "detail": r.text}
+    except Exception as e:
+        print("Error resolving reconciled item:", e)
+        return {"success": False, "detail": str(e)}
+
+def log_untracked_sale(product_id, order_id, quantity):
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/log-untracked-sale",  # Use dynamic base URL
+            json={
+                "product_id": product_id,
+                "order_id": order_id,
+                "quantity": quantity
+            }
+        )
+        return response.json()
+    except Exception as e:
+        print("API error:", e)
+        return {"success": False, "detail": str(e)}
+
+def create_manual_order(payload):
+    resp = requests.post(f"{API_BASE_URL}/manual-order", json=payload)
+    resp.raise_for_status()
+    return resp.json()
