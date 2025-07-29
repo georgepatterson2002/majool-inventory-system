@@ -286,31 +286,33 @@ function App() {
                                     [row.master_sku_id]: prev[row.master_sku_id].map(x =>
                                       x.product_id === item.product_id ? { ...x, price: val } : x
                                     )
-                                  }));
-                                }}
-                              />
-                              {item._focused && (
-                                <button
-                                  className="ml-2 px-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                                  onMouseDown={async (e) => {
-                                    e.preventDefault(); // prevents blur before click
-                                    const val = parseFloat(item.price);
-                                    if (!isNaN(val)) {
-                                      await fetch(`${API_HOST}/dashboard/product-price`, {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        body: JSON.stringify({ product_id: item.product_id, price: val })
-                                      });
-                                      // Re-fetch the SKU breakdown to refresh data
-                                      const res = await fetch(`${API_HOST}/dashboard/sku-breakdown?master_sku_id=${row.master_sku_id}`);
-                                      const data = await res.json();
-                                      setSkuBreakdowns(prev => ({ ...prev, [row.master_sku_id]: data }));
-                                    }
-                                  }}
-                                >
-                                  Save
-                                </button>
-                              )}
+                                    }));
+                                    }}
+                                    />
+                                    {item._focused && (
+                                      <button
+                                        className="ml-2 px-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                        onMouseDown={async (e) => {
+                                          e.preventDefault(); // prevents blur before click
+                                          const val = item.price === "" ? null : parseFloat(item.price);
+
+                                          if (val !== null && !isNaN(val)) {
+                                            await fetch(`${API_HOST}/product-price`, {
+                                              method: "POST",
+                                              headers: { "Content-Type": "application/json" },
+                                              body: JSON.stringify({ product_id: item.product_id, price: val })
+                                            });
+
+                                            // Re-fetch the SKU breakdown to refresh data
+                                            const res = await fetch(`${API_HOST}/dashboard/sku-breakdown?master_sku_id=${row.master_sku_id}`);
+                                            const data = await res.json();
+                                            setSkuBreakdowns(prev => ({ ...prev, [row.master_sku_id]: data }));
+                                          }
+                                        }}
+                                      >
+                                        Save
+                                      </button>
+                                    )}
                             </div>
                           )}
                         </td>
