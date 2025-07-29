@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 from inventory_backend.database import engine
@@ -392,7 +392,22 @@ async def update_price(req: Request):
         data = await req.json()
         product_id = data.get("product_id")
         price = data.get("price")
-        # ... update query
+
+        if product_id is None:
+            raise HTTPException(status_code=400, detail="Missing product_id")
+
+        # If price is None or empty, don't change anything
+        if price is None:
+            return {"status": "skipped", "reason": "No price provided"}
+
+        with engine.begin() as conn:
+            conn.execute(
+                text("UPDATE products SET price = :price WHERE product_id = :pid"),
+                {"pid": product_id, "price": price}
+            )
+
+        return {"status": "ok", "product_id": product_id, "price": price}
+
     except Exception as e:
         print("Error in product-price:", e)
         traceback.print_exc()
