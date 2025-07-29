@@ -297,7 +297,7 @@ function App() {
                                           const val = item.price === "" ? null : parseFloat(item.price);
 
                                           if (val !== null && !isNaN(val)) {
-                                            await fetch(`${API_HOST}/product-price`, {
+                                            await fetch(`${API_HOST}/dashboard/product-price`, {
                                               method: "POST",
                                               headers: { "Content-Type": "application/json" },
                                               body: JSON.stringify({ product_id: item.product_id, price: val })
