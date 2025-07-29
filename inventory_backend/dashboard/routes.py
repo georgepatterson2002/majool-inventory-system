@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 from inventory_backend.database import engine
+from typing import Optional
 import os
 import requests
 from datetime import datetime, timedelta
@@ -15,7 +16,7 @@ import csv
 
 class PriceUpdate(BaseModel):
     product_id: int
-    price: float
+    price: Optional[float]
 
 router = APIRouter()
 
