@@ -197,7 +197,7 @@ def get_unit_details(serial_number: str):
             "received_date": str(row.received_date),
             "sold": row.sold,
             "is_damaged": row.is_damaged,
-            "po_number": row.po_number  # <-- add this line
+            "po_number": row.po_number
         }
 
 @router.get("/insights/monthly-report")
