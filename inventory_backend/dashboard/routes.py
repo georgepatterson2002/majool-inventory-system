@@ -354,24 +354,24 @@ def get_sku_breakdown(master_sku_id: str):
                         r.product_id,
                         r.price,
                         COUNT(*) AS raw_qty,
-                        COALESCE(SUM(sa.soft_qty), 0) AS total_soft
+                        COALESCE(sa.soft_qty, 0) AS total_soft
                     FROM raw r
                     LEFT JOIN soft_alloc sa ON r.product_id = sa.product_id
-                    GROUP BY r.sku_group, r.product_id, r.price
+                    GROUP BY r.sku_group, r.product_id, r.price, sa.soft_qty
                 )
                 SELECT 
                     sku_group AS sku,
-                    raw_qty - total_soft AS qty,
+                    GREATEST(raw_qty - total_soft, 0) AS qty,
                     product_id,
                     price
                 FROM counted
-                WHERE raw_qty - total_soft > 0
+                WHERE GREATEST(raw_qty - total_soft, 0) > 0
                 ORDER BY sku
             """), {"msku": master_sku_id})
 
             rows = result.fetchall()
             if not rows:
-                raise HTTPException(status_code=404, detail="No SKU breakdown found.")
+                return []
 
             return [
                 {
@@ -385,28 +385,3 @@ def get_sku_breakdown(master_sku_id: str):
     except Exception as e:
         print(f"Error in /dashboard/sku-breakdown: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve SKU breakdown")
-
-@router.post("/product-price")
-async def update_price(req: Request):
-    try:
-        data = await req.json()
-        product_id = data.get("product_id")
-        price = data.get("price")
-
-        if product_id is None:
-            raise HTTPException(status_code=400, detail="Missing product_id")
-
-        # Skip update if no price provided
-        if price is None:
-            return {"status": "skipped", "reason": "No price provided"}
-
-        with engine.begin() as conn:
-            conn.execute(
-                text("UPDATE products SET price = :price WHERE product_id = :pid"),
-                {"pid": product_id, "price": price}
-            )
-
-        return {"status": "ok", "product_id": product_id, "price": price}
-
-    except Exception:
-        raise HTTPException(status_code=500, detail="Internal Server Error")

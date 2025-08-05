@@ -7,6 +7,29 @@ from inventory_backend.database import engine
 
 VEEQO_API_KEY = os.getenv("VEEQO_API_KEY")
 
+def get_available_products_by_ssd(conn, ssd_id):
+    result = conn.execute(text("""
+        WITH unsold AS (
+            SELECT p.product_id, COUNT(*) AS unsold_qty
+            FROM inventory_units iu
+            JOIN products p ON iu.product_id = p.product_id
+            WHERE iu.sold = FALSE AND iu.serial_number != 'NOSER' AND p.ssd_id = :ssd_id
+            GROUP BY p.product_id
+        ),
+        soft_alloc AS (
+            SELECT product_id, SUM(quantity) AS soft_qty
+            FROM untracked_serial_sales
+            GROUP BY product_id
+        )
+        SELECT u.product_id, COALESCE(u.unsold_qty, 0) - COALESCE(sa.soft_qty, 0) AS available
+        FROM unsold u
+        LEFT JOIN soft_alloc sa ON u.product_id = sa.product_id
+        WHERE (COALESCE(u.unsold_qty, 0) - COALESCE(sa.soft_qty, 0)) > 0
+        ORDER BY available DESC
+    """), {"ssd_id": ssd_id})
+    return [dict(row) for row in result.fetchall()]
+
+
 def sync_veeqo_orders_job():
     def fetch_orders():
         la_tz = pytz.timezone("America/Los_Angeles")
@@ -291,5 +314,62 @@ def sync_veeqo_orders_job():
             if serial_pointer < len(serials):
                 unassigned = serials[serial_pointer:]
                 print(f"[INFO] Unused serials for order {order_id}: {unassigned}")
+
+             # --- 7. Ensure soft allocation for 1TB SSDs ---
+            if shipped_time >= ssd_cutoff and not is_return_order:
+                # Count how many 1TB SSDs are still needed (already handled some above)
+                total_1tb_needed = sum(
+                    item.get("quantity", 0)
+                    for allocation in order.get("allocations", [])
+                    for item in allocation.get("line_items", [])
+                    if any(k in (item.get("sellable", {}).get("sku_code") or "").lower() for k in ["+1tb", "--1tb", "b0d1d5j1j1"])
+                )
+
+                # Skip if already hard-allocated all
+                already_allocated = conn.execute(text("""
+                    SELECT COUNT(*) FROM inventory_log il
+                    JOIN inventory_units iu ON il.serial_number = iu.serial_number
+                    JOIN products p ON iu.product_id = p.product_id
+                    WHERE il.order_id = :order_id AND p.ssd_id = 2
+                """), {"order_id": order_id}).scalar()
+
+                soft_qty_to_allocate = total_1tb_needed - already_allocated
+                if soft_qty_to_allocate > 0:
+                    print(f"[INFO] Trying soft allocation of {soft_qty_to_allocate} SSDs for Order {order_id}")
+                    available_products = get_available_products_by_ssd(conn, ssd_id=2)
+                    to_allocate = soft_qty_to_allocate
+
+                    for p in available_products:
+                        if to_allocate <= 0:
+                            break
+                        qty = min(to_allocate, p["available"])
+                        conn.execute(text("""
+                            INSERT INTO untracked_serial_sales (product_id, order_id, quantity, created_at)
+                            VALUES (:product_id, :order_id, :qty, :created_at)
+                            ON CONFLICT (product_id, order_id) DO UPDATE
+                            SET quantity = untracked_serial_sales.quantity + EXCLUDED.quantity
+                        """), {
+                            "product_id": p["product_id"],
+                            "order_id": order_id,
+                            "qty": qty,
+                            "created_at": shipped_time
+                        })
+                        to_allocate -= qty
+
+                    if to_allocate > 0:
+                        print(f"[MANUAL REVIEW] Could not soft allocate {to_allocate} SSDs for Order {order_id}")
+                        conn.execute(text("""
+                            INSERT INTO manual_review (order_id, sku, reason, metadata, created_at)
+                            VALUES (:order_id, 'SSD-1TB', 'Soft allocation failed', :metadata, :created_at)
+                        """), {
+                            "order_id": order_id,
+                            "metadata": json.dumps({
+                                "ssd_id": 2,
+                                "requested": soft_qty_to_allocate,
+                                "allocated": soft_qty_to_allocate - to_allocate,
+                                "unallocated": to_allocate
+                            }),
+                            "created_at": shipped_time
+                        })
 
     return updated
