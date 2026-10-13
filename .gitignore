@@ -50,4 +50,30 @@ $RECYCLE.BIN/
 *.swo
 
 # Ignore .gitignore files inside sub-envs or tools
-*/.gitignore
+
+# Local configuration and generated files
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+node_modules/
+logs/
+Logs/
+*.log
+backups/
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.iml
+build/
+dist/
+output_images/
+data/
